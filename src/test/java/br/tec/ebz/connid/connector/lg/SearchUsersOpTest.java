@@ -17,7 +17,7 @@ public class SearchUsersOpTest extends BaseTestConnection {
 
         facade.search(ObjectClass.ACCOUNT, null, handler, null);
         List<ConnectorObject> objects = handler.getObjects();
-        AssertJUnit.assertTrue("Size: " + objects.size(), objects.size() > 1);
+        AssertJUnit.assertTrue("Size: " + objects.size(), objects.size() > 3372); // qtd total 3373
     }
 
     @Test()
@@ -25,7 +25,7 @@ public class SearchUsersOpTest extends BaseTestConnection {
         ConnectorFacade facade = setupConnector();
         ListResultHandler handler = new ListResultHandler();
 
-        Attribute attribute = AttributeBuilder.build(Uid.NAME, "301");
+        Attribute attribute = AttributeBuilder.build(Uid.NAME, "11481"); // user pag 10
         EqualsFilter filter = new EqualsFilter(attribute);
 
         facade.search(ObjectClass.ACCOUNT, filter, handler, null);

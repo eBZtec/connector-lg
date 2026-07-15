@@ -2,7 +2,6 @@ package br.tec.ebz.connid.connector.lg.processing;
 
 import br.tec.ebz.connid.connector.lg.*;
 import br.tec.ebz.connid.connector.lg.model.UserRecord;
-import com.evolveum.polygon.common.GuardedStringAccessor;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
@@ -10,23 +9,11 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.identityconnectors.common.logging.Log;
-import org.identityconnectors.common.security.GuardedString;
 import org.identityconnectors.framework.common.exceptions.ConnectionFailedException;
 import org.identityconnectors.framework.common.objects.*;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 import tools.jackson.dataformat.xml.XmlMapper;
 
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.stream.XMLInputFactory;
-import javax.xml.stream.XMLStreamReader;
-import java.io.ByteArrayInputStream;
-import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -44,23 +31,24 @@ public class UserProcessing extends ObjectProcessing {
     }
 
     public void search(String uid, ResultsHandler resultsHandler) throws Exception {
-        if (uid == null) {
-            searchAllUsers(resultsHandler);
-        } else {
-            searchUserById(uid, resultsHandler);
-        }
-    }
-
-    public void searchUserById(String uid, ResultsHandler resultsHandler) throws Exception {}
-
-    public void searchAllUsers(ResultsHandler resultsHandler) throws Exception {
         int pageNumber = 1;
         PageResult page;
 
         do {
             page = fetchUserPage(pageNumber);
             for (UserRecord user : page.users()) {
-                resultsHandler.handle(translate(user));
+
+                if (uid == null) {
+                    resultsHandler.handle(translate(user));
+                } else {
+                    int uidFiltro = Integer.parseInt(uid);
+                    int uidUsuario = Integer.parseInt(user.matricula());
+
+                    if (uidUsuario == uidFiltro) {
+                        resultsHandler.handle(translate(user));
+                        return;
+                    }
+                }
             }
             pageNumber++;
 
@@ -96,34 +84,27 @@ public class UserProcessing extends ObjectProcessing {
 
                 for (JsonNode contrato : contratos) {
                     users.add(new UserRecord(
-                            contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asText(),
-                            contrato.path("Alocacao").path("Empresa").path("Descricao").asText(),
-                            contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asText(),
-                            contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asText(),
-                            contrato.path("Pessoa").path("Contato").path("EmailParticular").asText(),
-                            contrato.path("DadosGerais").path("Matricula").asText(),
-                            contrato.path("Pessoa").path("DadosPessoais").path("Nome").asText(),
-                            contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asText(),
-                            contrato.path("DadosGerais").path("DataAdmissao").asText(),
-                            contrato.path("DadosDaRescisao").path("DataDaRescisao").asText()
+                            contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
+                            contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
+                            contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
+                            contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
+                            contrato.path("Pessoa").path("Contato").path("EmailParticular").asString(),
+                            contrato.path("DadosGerais").path("Matricula").asString(),
+                            contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
+                            contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
+                            contrato.path("DadosGerais").path("DataAdmissao").asString(),
+                            contrato.path("DadosDaRescisao").path("DataDaRescisao").asString()
                     ));
                 }
-
                 return new PageResult(users, totalPages);
             }
         } catch (Exception e) {
-            throw new ConnectionFailedException("Failed to fetch page " + page, e);
+            LOG.error("Erro ao processar usuários: {0}", e.getMessage());
+            throw new ConnectionFailedException(e.getMessage());
         }
     }
 
     private record PageResult(List<UserRecord> users, int totalPages) {}
-
-    private String getPasswordAsString() {
-        GuardedStringAccessor accessor = new GuardedStringAccessor();
-        GuardedString systemKey = configuration.getSenha();
-        systemKey.access(accessor);
-        return accessor.getClearString();
-    }
 
     private HttpPost buildUserRequest(String url, int totalDePaginas) {
         HttpPost post = new HttpPost(url);
@@ -157,7 +138,7 @@ public class UserProcessing extends ObjectProcessing {
                            </soapenv:Body>
                         </soapenv:Envelope>
                         """,
-                getPasswordAsString(),
+                connection.getPasswordAsString(),
                 configuration.getUsuario(),
                 configuration.getGuidtenant(),
                 configuration.getAmbiente(),

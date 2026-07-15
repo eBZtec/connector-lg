@@ -12,9 +12,7 @@ import org.identityconnectors.framework.spi.Connector;
 import org.identityconnectors.framework.spi.ConnectorClass;
 import org.identityconnectors.framework.spi.operations.*;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 @ConnectorClass(displayNameKey = "lg.connector.display", configurationClass = LGConfiguration.class)
 public class LGConnector implements Connector, TestOp, SearchOp<Filter>, SchemaOp {
