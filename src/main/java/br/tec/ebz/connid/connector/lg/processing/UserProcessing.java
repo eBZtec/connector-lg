@@ -13,7 +13,20 @@ import org.identityconnectors.common.logging.Log;
 import org.identityconnectors.common.security.GuardedString;
 import org.identityconnectors.framework.common.exceptions.ConnectionFailedException;
 import org.identityconnectors.framework.common.objects.*;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.xml.XmlMapper;
 
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamReader;
+import java.io.ByteArrayInputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -38,13 +51,29 @@ public class UserProcessing extends ObjectProcessing {
         }
     }
 
+    public void searchUserById(String uid, ResultsHandler resultsHandler) throws Exception {}
+
     public void searchAllUsers(ResultsHandler resultsHandler) throws Exception {
+        int pageNumber = 1;
+        PageResult page;
+
+        do {
+            page = fetchUserPage(pageNumber);
+            for (UserRecord user : page.users()) {
+                resultsHandler.handle(translate(user));
+            }
+            pageNumber++;
+
+        } while (pageNumber <= page.totalPages());
+    }
+
+    private PageResult fetchUserPage(int page) {
+
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
-        int totalDePaginas = 1;
 
         try (CloseableHttpClient client = HttpClients.createDefault()) {
 
-            HttpPost post = buildUserRequest(url, totalDePaginas);
+            HttpPost post = buildUserRequest(url, page);
 
             try (CloseableHttpResponse response = client.execute(post)) {
 
@@ -52,15 +81,42 @@ public class UserProcessing extends ObjectProcessing {
                         response.getEntity(),
                         StandardCharsets.UTF_8);
 
-                System.out.println("Status: " + response.getCode());
-                System.out.println(responseXml);
+                XmlMapper mapper = new XmlMapper();
+
+                JsonNode root = mapper.readTree(responseXml);
+
+                JsonNode result = root.get("Body").get("ConsultarContratosAplicandoAutorizacaoDePerfilResponse").get("ConsultarContratosAplicandoAutorizacaoDePerfilResult");
+
+                int totalPages = result.path("TotalDePaginas").asInt();
+
+                JsonNode retorno = result.get("Retorno");
+                JsonNode contratos = retorno.path("ContratoDeTrabalhoV3");
+
+                List<UserRecord> users = new ArrayList<>();
+
+                for (JsonNode contrato : contratos) {
+                    users.add(new UserRecord(
+                            contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asText(),
+                            contrato.path("Alocacao").path("Empresa").path("Descricao").asText(),
+                            contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asText(),
+                            contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asText(),
+                            contrato.path("Pessoa").path("Contato").path("EmailParticular").asText(),
+                            contrato.path("DadosGerais").path("Matricula").asText(),
+                            contrato.path("Pessoa").path("DadosPessoais").path("Nome").asText(),
+                            contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asText(),
+                            contrato.path("DadosGerais").path("DataAdmissao").asText(),
+                            contrato.path("DadosDaRescisao").path("DataDaRescisao").asText()
+                    ));
+                }
+
+                return new PageResult(users, totalPages);
             }
         } catch (Exception e) {
-            LOG.error("Erro ao processar usuários", e);
-            throw new ConnectionFailedException(e.getMessage());
+            throw new ConnectionFailedException("Failed to fetch page " + page, e);
         }
-
     }
+
+    private record PageResult(List<UserRecord> users, int totalPages) {}
 
     private String getPasswordAsString() {
         GuardedStringAccessor accessor = new GuardedStringAccessor();
@@ -72,35 +128,35 @@ public class UserProcessing extends ObjectProcessing {
     private HttpPost buildUserRequest(String url, int totalDePaginas) {
         HttpPost post = new HttpPost(url);
         String xml = String.format("""
-    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v2="lg.com.br/api/v2" xmlns:v1="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-       <soapenv:Header>
-          <dto:LGAutenticacao>
-             <dto:TokenUsuario>
-                <dto:Senha>%s</dto:Senha>
-                <dto:Usuario>%s</dto:Usuario>
-                <dto:GuidTenant>%s</dto:GuidTenant>
-             </dto:TokenUsuario>
-          </dto:LGAutenticacao>
-          <dto:LGContextoAmbiente>
-             <dto:Ambiente>%s</dto:Ambiente>
-          </dto:LGContextoAmbiente>
-       </soapenv:Header>
-       <soapenv:Body>
-          <v2:ConsultarContratosAplicandoAutorizacaoDePerfil>
-             <v2:filtro>
-                <v1:PaginaAtual>%d</v1:PaginaAtual>
-                <v1:TiposDeSituacoes>
-                   <arr:int>1</arr:int>
-                   <arr:int>2</arr:int>
-                   <arr:int>3</arr:int>
-                   <arr:int>4</arr:int>
-                   <arr:int>5</arr:int>
-                </v1:TiposDeSituacoes>
-             </v2:filtro>
-          </v2:ConsultarContratosAplicandoAutorizacaoDePerfil>
-       </soapenv:Body>
-    </soapenv:Envelope>
-    """,
+                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v2="lg.com.br/api/v2" xmlns:v1="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                           <soapenv:Header>
+                              <dto:LGAutenticacao>
+                                 <dto:TokenUsuario>
+                                    <dto:Senha>%s</dto:Senha>
+                                    <dto:Usuario>%s</dto:Usuario>
+                                    <dto:GuidTenant>%s</dto:GuidTenant>
+                                 </dto:TokenUsuario>
+                              </dto:LGAutenticacao>
+                              <dto:LGContextoAmbiente>
+                                 <dto:Ambiente>%s</dto:Ambiente>
+                              </dto:LGContextoAmbiente>
+                           </soapenv:Header>
+                           <soapenv:Body>
+                              <v2:ConsultarContratosAplicandoAutorizacaoDePerfil>
+                                 <v2:filtro>
+                                    <v1:PaginaAtual>%d</v1:PaginaAtual>
+                                    <v1:TiposDeSituacoes>
+                                       <arr:int>1</arr:int>
+                                       <arr:int>2</arr:int>
+                                       <arr:int>3</arr:int>
+                                       <arr:int>4</arr:int>
+                                       <arr:int>5</arr:int>
+                                    </v1:TiposDeSituacoes>
+                                 </v2:filtro>
+                              </v2:ConsultarContratosAplicandoAutorizacaoDePerfil>
+                           </soapenv:Body>
+                        </soapenv:Envelope>
+                        """,
                 getPasswordAsString(),
                 configuration.getUsuario(),
                 configuration.getGuidtenant(),
@@ -115,10 +171,6 @@ public class UserProcessing extends ObjectProcessing {
         post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil");
 
         return post;
-    }
-
-    public void searchUserById(String uid, ResultsHandler resultsHandler) throws Exception {
-
     }
 
     private ConnectorObject translate(UserRecord user) {
