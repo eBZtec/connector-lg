@@ -1,5 +1,5 @@
 package br.tec.ebz.connid.connector.lg.model;
 
-public record UserRecord(String cargo, String empresa, String organizacao, String emailCorporativo, String emailParticular, String matricula, String nome, String dataDeNascimento, String dataAdmissao, String dataDaRescisao) {
+public record UserRecord(String cargo, String empresa, String organizacao, String emailCorporativo, String emailParticular, String matricula, String nome, String dataDeNascimento, String dataAdmissao, String dataDaRescisao, String codigoEmpresa, String gestor) {
 }
 

@@ -11,4 +11,5 @@ public interface SchemaHandler {
     String USER_DATA_DE_NASCIMENTO = "DataDeNascimento";
     String USER_NOME = "Nome";
     String USER_DATA_DE_RESCISAO = "DataDaRescisao";
+    String NOME_SUPERIOR = "Gestor";
 }

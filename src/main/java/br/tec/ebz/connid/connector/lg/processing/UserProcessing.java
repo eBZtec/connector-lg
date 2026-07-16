@@ -1,6 +1,8 @@
 package br.tec.ebz.connid.connector.lg.processing;
 
 import br.tec.ebz.connid.connector.lg.*;
+import br.tec.ebz.connid.connector.lg.model.Gestor;
+import br.tec.ebz.connid.connector.lg.model.PageResult;
 import br.tec.ebz.connid.connector.lg.model.UserRecord;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -35,7 +37,7 @@ public class UserProcessing extends ObjectProcessing {
         PageResult page;
 
         do {
-            page = fetchUserPage(pageNumber);
+            page = fetchUserPage(pageNumber, uid);
             for (UserRecord user : page.users()) {
 
                 if (uid == null) {
@@ -55,7 +57,7 @@ public class UserProcessing extends ObjectProcessing {
         } while (pageNumber <= page.totalPages());
     }
 
-    private PageResult fetchUserPage(int page) {
+    private PageResult fetchUserPage(int page, String uid){
 
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
@@ -83,17 +85,30 @@ public class UserProcessing extends ObjectProcessing {
                 List<UserRecord> users = new ArrayList<>();
 
                 for (JsonNode contrato : contratos) {
+
+                    String matricula = contrato.path("DadosGerais").path("Matricula").asString();
+
+                    if (uid != null && !uid.equals(matricula)) {
+                        continue;
+                    }
+
+                    String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
+
+                    Map<String, String> gestor = defineSuperior(matricula, empresa);
+
                     users.add(new UserRecord(
                             contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
                             contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
                             contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
                             contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
                             contrato.path("Pessoa").path("Contato").path("EmailParticular").asString(),
-                            contrato.path("DadosGerais").path("Matricula").asString(),
+                            matricula,
                             contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
                             contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
                             contrato.path("DadosGerais").path("DataAdmissao").asString(),
-                            contrato.path("DadosDaRescisao").path("DataDaRescisao").asString()
+                            contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
+                            empresa,
+                            gestor != null ? gestor.get(NOME_SUPERIOR) : null
                     ));
                 }
                 return new PageResult(users, totalPages);
@@ -103,8 +118,6 @@ public class UserProcessing extends ObjectProcessing {
             throw new ConnectionFailedException(e.getMessage());
         }
     }
-
-    private record PageResult(List<UserRecord> users, int totalPages) {}
 
     private HttpPost buildUserRequest(String url, int totalDePaginas) {
         HttpPost post = new HttpPost(url);
@@ -154,6 +167,143 @@ public class UserProcessing extends ObjectProcessing {
         return post;
     }
 
+    private Map<String, String> defineSuperior(String matricula, String empresa) {
+
+        Map<String, String> superior = new HashMap<>();
+
+        Gestor dadosSuperior = searchManager(empresa, matricula);
+
+        String matriculaSuperior = dadosSuperior.matricula();
+        String situacaoSuperior = dadosSuperior.situacaoDoColaborador();
+        String empresaSuperior = dadosSuperior.empresa();
+
+        if (dadosSuperior == null || matriculaSuperior == null || matriculaSuperior.isBlank() || empresaSuperior == null || empresaSuperior.isBlank()) {
+            LOG.info("Superior não encontrado.");
+            return null;
+        }
+
+        LOG.info("Encontrado o superior. Matricula {0} empresa {1} e situação {2}. Validando situação.", matriculaSuperior, empresaSuperior, situacaoSuperior);
+
+        String situacaoTrabalhoNormal = "ATIVIDADE NORMAL";
+
+        while (!dadosSuperior.situacaoDoColaborador().contains(situacaoTrabalhoNormal)) {
+            LOG.info("Superior {0} está com a situação diferente de 'ATIVIDADE NORMAL'. Situação {1}, procurando pelo superior dele.", matriculaSuperior, situacaoSuperior);
+
+            dadosSuperior = searchManager(empresaSuperior, matriculaSuperior);
+
+            if (dadosSuperior == null || matriculaSuperior == null || matriculaSuperior.isBlank() || empresaSuperior == null || empresaSuperior.isBlank()) {
+                LOG.info("Superior não encontrado.");
+                return null;
+            }
+
+            LOG.info("Superior encontrado: {0}", dadosSuperior);
+
+            matriculaSuperior = dadosSuperior.matricula();
+            situacaoSuperior = dadosSuperior.situacaoDoColaborador();
+        }
+
+        String nomeSuperior = dadosSuperior.nome();
+
+        LOG.info("Superior validado com sucesso. Matricula {0}, empresa {1}, situação {2} e nome {3}.", matriculaSuperior, empresaSuperior, situacaoSuperior, nomeSuperior);
+
+        superior.put(SchemaHandler.NOME_SUPERIOR, nomeSuperior);
+
+        return superior;
+    }
+
+    private Gestor searchManager(String codigoEmpresa, String matricula) {
+
+        String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
+
+        try (CloseableHttpClient client = HttpClients.createDefault()) {
+
+            HttpPost post = buildManagerRequest(url, codigoEmpresa, matricula);
+
+            try (CloseableHttpResponse response = client.execute(post)) {
+
+                String responseXml = EntityUtils.toString(
+                        response.getEntity(),
+                        StandardCharsets.UTF_8);
+
+                XmlMapper mapper = new XmlMapper();
+
+                JsonNode root = mapper.readTree(responseXml);
+
+                JsonNode result = root.path("Body")
+                        .path("ConsultarListaGestoresNivelMaisProximoResponse")
+                        .path("ConsultarListaGestoresNivelMaisProximoResult");
+
+                JsonNode contrato = result.path("Retorno")
+                        .path("ContratoDeTrabalhoParcial");
+
+                return new Gestor(
+                        contrato.path("Matricula").asString(),
+                        contrato.path("Pessoa").path("Nome").asString(),
+                        contrato.path("SituacaoDoColaborador").path("Descricao").asString(),
+                        contrato.path("Empresa").path("Codigo").asString()
+                );
+            }
+        } catch (Exception e) {
+            LOG.error("Erro ao processar gestor: {0}", e.getMessage());
+            throw new ConnectionFailedException(e.getMessage());
+        }
+    }
+
+    private HttpPost buildManagerRequest(String url, String codigoEmpresa, String matricula) {
+        HttpPost post = new HttpPost(url);
+        String xml = String.format("""
+                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v1="lg.com.br/api/v1" xmlns:v2="lg.com.br/api/v2" xmlns:v11="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                              <soapenv:Header>
+                              <dto:LGAutenticacao>
+                                 <!--Optional:-->
+                                 <dto:TokenUsuario>
+                                    <dto:Senha>%s</dto:Senha>
+                                    <dto:Usuario>%s</dto:Usuario>
+                                    <dto:GuidTenant>%s</dto:GuidTenant>
+                                 </dto:TokenUsuario>
+                              </dto:LGAutenticacao>
+                              <dto:LGContextoAmbiente>
+                                 <dto:Ambiente>%s</dto:Ambiente>
+                              </dto:LGContextoAmbiente>
+                           </soapenv:Header>
+                            <soapenv:Body>
+                                <v2:ConsultarListaGestoresNivelMaisProximo>
+                                 <v2:filtro>
+                                    <v11:Colaborador>
+                                      <v11:Empresa>
+                                        <v11:Codigo>%s</v11:Codigo>
+                                      </v11:Empresa>
+                                      <v11:Matricula>%s</v11:Matricula>
+                                   </v11:Colaborador>
+                                   <v11:TiposDeSituacoes>
+                                       <arr:int>1</arr:int> <!--1 - Afastamento-->
+                        			   <arr:int>2</arr:int> <!--2 - Atividade Normal-->
+                        			   <arr:int>3</arr:int> <!--3 - Férias-->
+                        			   <arr:int>4</arr:int> <!--4 - Recesso-->
+                        			   <arr:int>5</arr:int> <!--5 - Rescisão-->
+                                    </v11:TiposDeSituacoes>
+                                 </v2:filtro>
+                              </v2:ConsultarListaGestoresNivelMaisProximo>
+                           </soapenv:Body>
+                        </soapenv:Envelope>
+                        """,
+                connection.getPasswordAsString(),
+                configuration.getUsuario(),
+                configuration.getGuidtenant(),
+                configuration.getAmbiente(),
+                codigoEmpresa,
+                matricula
+        );
+        StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
+        post.setEntity(entity);
+
+        post.setHeader("Content-Type", "text/xml; charset=UTF-8");
+        post.setHeader("Accept", "text/xml");
+        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaGestoresNivelMaisProximo");
+
+        return post;
+    }
+
     private ConnectorObject translate(UserRecord user) {
         ConnectorObjectBuilder builder = new ConnectorObjectBuilder();
         builder.setObjectClass(ObjectClass.ACCOUNT);
@@ -168,6 +318,7 @@ public class UserProcessing extends ObjectProcessing {
         addAttribute(builder, USER_EMAIL_PATICULAR, user.emailParticular());
         addAttribute(builder, USER_DATA_DE_NASCIMENTO, user.dataDeNascimento());
         addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
+        addAttribute(builder, NOME_SUPERIOR, user.gestor());
 
         return builder.build();
     }
@@ -247,6 +398,13 @@ public class UserProcessing extends ObjectProcessing {
                         USER_DATA_DE_RESCISAO,
                         Date.class,
                         USER_DATA_DE_RESCISAO
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        NOME_SUPERIOR,
+                        Date.class,
+                        NOME_SUPERIOR
                 )
         );
         return objectClassInfoBuilder;
