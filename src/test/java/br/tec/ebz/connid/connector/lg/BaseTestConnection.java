@@ -34,6 +34,7 @@ public abstract class BaseTestConnection {
         configuration.setUsuario(propertiesReader.setUsuario());
         configuration.setGuidtenant(propertiesReader.getGuidtenant());
         configuration.setAmbiente(propertiesReader.getAmbiente());
+        configuration.setEmpresas(propertiesReader.getEmpresas());
 
         return setupConnector(configuration);
     }

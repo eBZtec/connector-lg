@@ -14,6 +14,7 @@ public class LGConfiguration extends AbstractConfiguration {
     private GuardedString senha;
     private String guidtenant;
     private String ambiente;
+    private String empresas;
 
     @ConfigurationProperty(
             displayMessageKey = "lg.config.urlEndpoint",
@@ -82,6 +83,19 @@ public class LGConfiguration extends AbstractConfiguration {
         this.ambiente = ambiente;
     }
 
+    @ConfigurationProperty(
+            displayMessageKey = "lg.config.empresas",
+            helpMessageKey = "lg.config.empresas.help",
+            required = true,
+            order=1)
+    public String getEmpresas() {
+        return empresas;
+    }
+
+    public void setEmpresas(String empresas) {
+        this.empresas = empresas;
+    }
+
     @Override
     public void validate() {
         if (urlEndpoint == null || urlEndpoint.isEmpty())
@@ -94,5 +108,7 @@ public class LGConfiguration extends AbstractConfiguration {
             throw new IllegalArgumentException("Guidtenant is required.");
         if (ambiente == null || ambiente.isEmpty())
             throw new IllegalArgumentException("Ambiente is required.");
+        if (empresas == null || empresas.isEmpty())
+            throw new IllegalArgumentException("empresas is required.");
     }
 }

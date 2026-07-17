@@ -19,6 +19,7 @@ public class TestPropertiesReader {
     private static final String USUARIO = "usuario";
     private static final String GUIDTENANT = "guidtenant";
     private static final String AMBIENTE = "ambiente";
+    private static final String EMPRESA = "empresas";
 
     public TestPropertiesReader() {
         try {
@@ -50,6 +51,10 @@ public class TestPropertiesReader {
 
     public String getAmbiente() {
         return (String) PROPERTIES.get(AMBIENTE);
+    }
+
+    public String getEmpresas() {
+        return (String) PROPERTIES.get(EMPRESA);
     }
 
 }

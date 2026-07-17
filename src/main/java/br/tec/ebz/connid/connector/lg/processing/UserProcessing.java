@@ -5,10 +5,6 @@ import br.tec.ebz.connid.connector.lg.model.Gestor;
 import br.tec.ebz.connid.connector.lg.model.PageResult;
 import br.tec.ebz.connid.connector.lg.model.UserRecord;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.identityconnectors.common.logging.Log;
@@ -20,8 +16,6 @@ import tools.jackson.dataformat.xml.XmlMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static br.tec.ebz.connid.connector.lg.SchemaHandler.*;
 
@@ -323,8 +317,9 @@ public class UserProcessing extends ObjectProcessing {
         ConnectorObjectBuilder builder = new ConnectorObjectBuilder();
         builder.setObjectClass(ObjectClass.ACCOUNT);
 
-        addAttribute(builder, Name.NAME, user.nome());
+        addAttribute(builder, Name.NAME, user.matricula());
         addAttribute(builder, Uid.NAME, user.matricula());
+        addAttribute(builder, USER_NOME, user.nome());
         addAttribute(builder, USER_CARGO, user.cargo());
         addAttribute(builder, USER_EMPRESA, user.empresa());
         addAttribute(builder, USER_OU, user.organizacao());
@@ -346,14 +341,21 @@ public class UserProcessing extends ObjectProcessing {
                 buildAttributeInfo(
                         Uid.NAME,
                         String.class,
-                        USER_Matricula,
+                        USER_MATRICULA,
                         AttributeInfo.Flags.REQUIRED
                 )
         );
-
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
-                        Name.NAME,
+                        Uid.NAME,
+                        String.class,
+                        USER_NOME,
+                        AttributeInfo.Flags.REQUIRED
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_NOME,
                         String.class,
                         USER_NOME,
                         AttributeInfo.Flags.REQUIRED
