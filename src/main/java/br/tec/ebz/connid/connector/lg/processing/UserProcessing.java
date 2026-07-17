@@ -8,6 +8,7 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.identityconnectors.common.logging.Log;
@@ -16,8 +17,11 @@ import org.identityconnectors.framework.common.objects.*;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.dataformat.xml.XmlMapper;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static br.tec.ebz.connid.connector.lg.SchemaHandler.*;
 
@@ -32,7 +36,7 @@ public class UserProcessing extends ObjectProcessing {
         this.configuration = configuration;
     }
 
-    public void search(String uid, ResultsHandler resultsHandler) throws Exception {
+    public void search(String uid, ResultsHandler resultsHandler) {
         int pageNumber = 1;
         PageResult page;
 
@@ -57,69 +61,62 @@ public class UserProcessing extends ObjectProcessing {
         } while (pageNumber <= page.totalPages());
     }
 
-    private PageResult fetchUserPage(int page, String uid){
+    private PageResult fetchUserPage(int page, String uid) {
 
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
-        try (CloseableHttpClient client = HttpClients.createDefault()) {
+        try {
+            String responseXml = buildUserRequest(url, page);
 
-            HttpPost post = buildUserRequest(url, page);
+            XmlMapper mapper = new XmlMapper();
 
-            try (CloseableHttpResponse response = client.execute(post)) {
+            JsonNode root = mapper.readTree(responseXml);
 
-                String responseXml = EntityUtils.toString(
-                        response.getEntity(),
-                        StandardCharsets.UTF_8);
+            JsonNode result = root.get("Body").get("ConsultarContratosAplicandoAutorizacaoDePerfilResponse").get("ConsultarContratosAplicandoAutorizacaoDePerfilResult");
 
-                XmlMapper mapper = new XmlMapper();
+            int totalPages = result.path("TotalDePaginas").asInt();
 
-                JsonNode root = mapper.readTree(responseXml);
+            JsonNode retorno = result.get("Retorno");
+            JsonNode contratos = retorno.path("ContratoDeTrabalhoV3");
 
-                JsonNode result = root.get("Body").get("ConsultarContratosAplicandoAutorizacaoDePerfilResponse").get("ConsultarContratosAplicandoAutorizacaoDePerfilResult");
+            List<UserRecord> users = new ArrayList<>();
 
-                int totalPages = result.path("TotalDePaginas").asInt();
+            for (JsonNode contrato : contratos) {
 
-                JsonNode retorno = result.get("Retorno");
-                JsonNode contratos = retorno.path("ContratoDeTrabalhoV3");
+                String matricula = contrato.path("DadosGerais").path("Matricula").asString();
 
-                List<UserRecord> users = new ArrayList<>();
-
-                for (JsonNode contrato : contratos) {
-
-                    String matricula = contrato.path("DadosGerais").path("Matricula").asString();
-
-                    if (uid != null && !uid.equals(matricula)) {
-                        continue;
-                    }
-
-                    String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
-
-                    Map<String, String> gestor = defineSuperior(matricula, empresa);
-
-                    users.add(new UserRecord(
-                            contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
-                            contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
-                            contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
-                            contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
-                            contrato.path("Pessoa").path("Contato").path("EmailParticular").asString(),
-                            matricula,
-                            contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
-                            contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
-                            contrato.path("DadosGerais").path("DataAdmissao").asString(),
-                            contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
-                            empresa,
-                            gestor != null ? gestor.get(NOME_SUPERIOR) : null
-                    ));
+                if (uid != null && !uid.equals(matricula)) {
+                    continue;
                 }
-                return new PageResult(users, totalPages);
+
+                String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
+
+                Map<String, String> gestor = defineSuperior(matricula, empresa);
+
+                users.add(new UserRecord(
+                        contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
+                        contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
+                        contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
+                        contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
+                        contrato.path("Pessoa").path("Contato").path("EmailParticular").asString(),
+                        matricula,
+                        contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
+                        contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
+                        contrato.path("DadosGerais").path("DataAdmissao").asString(),
+                        contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
+                        empresa,
+                        gestor != null ? gestor.get(NOME_SUPERIOR) : null
+                ));
             }
+            return new PageResult(users, totalPages);
+
         } catch (Exception e) {
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
             throw new ConnectionFailedException(e.getMessage());
         }
     }
 
-    private HttpPost buildUserRequest(String url, int totalDePaginas) {
+    private String buildUserRequest(String url, int totalDePaginas) throws IOException {
         HttpPost post = new HttpPost(url);
         String xml = String.format("""
                         <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v2="lg.com.br/api/v2" xmlns:v1="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
@@ -164,7 +161,20 @@ public class UserProcessing extends ObjectProcessing {
         post.setHeader("Accept", "text/xml");
         post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil");
 
-        return post;
+        return connection.retornaHttpPost(post, response -> {
+            int status = response.getCode();
+            String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+
+            if (status < 200 || status > 299) {
+
+                XmlMapper mapper = new XmlMapper();
+                JsonNode root = mapper.readTree(responseBody);
+                String body = root.get("Body").get("Fault").get("faultstring").path("").asString();
+                LOG.error("Post FALHOU: status {0}, body: {1}", status, body);
+                throw new ConnectionFailedException("Erro ao buscar usuário: " + body);
+            }
+            return responseBody;
+        });
     }
 
     private Map<String, String> defineSuperior(String matricula, String empresa) {
@@ -173,14 +183,14 @@ public class UserProcessing extends ObjectProcessing {
 
         Gestor dadosSuperior = searchManager(empresa, matricula);
 
-        String matriculaSuperior = dadosSuperior.matricula();
-        String situacaoSuperior = dadosSuperior.situacaoDoColaborador();
-        String empresaSuperior = dadosSuperior.empresa();
-
-        if (dadosSuperior == null || matriculaSuperior == null || matriculaSuperior.isBlank() || empresaSuperior == null || empresaSuperior.isBlank()) {
+        if (dadosSuperior == null || dadosSuperior.matricula() == null || dadosSuperior.matricula().isBlank()) {
             LOG.info("Superior não encontrado.");
             return null;
         }
+
+        String matriculaSuperior = dadosSuperior.matricula();
+        String situacaoSuperior = dadosSuperior.situacaoDoColaborador();
+        String empresaSuperior = dadosSuperior.empresa();
 
         LOG.info("Encontrado o superior. Matricula {0} empresa {1} e situação {2}. Validando situação.", matriculaSuperior, empresaSuperior, situacaoSuperior);
 
@@ -191,8 +201,8 @@ public class UserProcessing extends ObjectProcessing {
 
             dadosSuperior = searchManager(empresaSuperior, matriculaSuperior);
 
-            if (dadosSuperior == null || matriculaSuperior == null || matriculaSuperior.isBlank() || empresaSuperior == null || empresaSuperior.isBlank()) {
-                LOG.info("Superior não encontrado.");
+            if (dadosSuperior == null || dadosSuperior.matricula() == null || dadosSuperior.matricula().isBlank()) {
+                LOG.info("Não foi encontrado outro superior.");
                 return null;
             }
 
@@ -212,44 +222,36 @@ public class UserProcessing extends ObjectProcessing {
     }
 
     private Gestor searchManager(String codigoEmpresa, String matricula) {
-
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
-        try (CloseableHttpClient client = HttpClients.createDefault()) {
+        try {
+            String responseXml = buildManagerRequest(url, codigoEmpresa, matricula);
 
-            HttpPost post = buildManagerRequest(url, codigoEmpresa, matricula);
+            XmlMapper mapper = new XmlMapper();
 
-            try (CloseableHttpResponse response = client.execute(post)) {
+            JsonNode root = mapper.readTree(responseXml);
 
-                String responseXml = EntityUtils.toString(
-                        response.getEntity(),
-                        StandardCharsets.UTF_8);
+            JsonNode result = root.path("Body")
+                    .path("ConsultarListaGestoresNivelMaisProximoResponse")
+                    .path("ConsultarListaGestoresNivelMaisProximoResult");
 
-                XmlMapper mapper = new XmlMapper();
+            JsonNode contrato = result.path("Retorno")
+                    .path("ContratoDeTrabalhoParcial");
 
-                JsonNode root = mapper.readTree(responseXml);
+            return new Gestor(
+                    contrato.path("Matricula").asString(),
+                    contrato.path("Pessoa").path("Nome").asString(),
+                    contrato.path("SituacaoDoColaborador").path("Descricao").asString(),
+                    contrato.path("Empresa").path("Codigo").asString()
+            );
 
-                JsonNode result = root.path("Body")
-                        .path("ConsultarListaGestoresNivelMaisProximoResponse")
-                        .path("ConsultarListaGestoresNivelMaisProximoResult");
-
-                JsonNode contrato = result.path("Retorno")
-                        .path("ContratoDeTrabalhoParcial");
-
-                return new Gestor(
-                        contrato.path("Matricula").asString(),
-                        contrato.path("Pessoa").path("Nome").asString(),
-                        contrato.path("SituacaoDoColaborador").path("Descricao").asString(),
-                        contrato.path("Empresa").path("Codigo").asString()
-                );
-            }
         } catch (Exception e) {
             LOG.error("Erro ao processar gestor: {0}", e.getMessage());
             throw new ConnectionFailedException(e.getMessage());
         }
     }
 
-    private HttpPost buildManagerRequest(String url, String codigoEmpresa, String matricula) {
+    private String buildManagerRequest(String url, String codigoEmpresa, String matricula) throws IOException {
         HttpPost post = new HttpPost(url);
         String xml = String.format("""
                         <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v1="lg.com.br/api/v1" xmlns:v2="lg.com.br/api/v2" xmlns:v11="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
@@ -301,7 +303,20 @@ public class UserProcessing extends ObjectProcessing {
         post.setHeader("Accept", "text/xml");
         post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaGestoresNivelMaisProximo");
 
-        return post;
+        return connection.retornaHttpPost(post, response -> {
+            int status = response.getCode();
+            String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+
+            if (status < 200 || status > 299) {
+
+                XmlMapper mapper = new XmlMapper();
+                JsonNode root = mapper.readTree(responseBody);
+                String body = root.get("Body").get("Fault").get("faultstring").path("").asString();
+                LOG.error("POST FALHOU: status {0}, body: {1}", status, body);
+                throw new ConnectionFailedException("Erro ao buscar gestor: " + body);
+            }
+            return responseBody;
+        });
     }
 
     private ConnectorObject translate(UserRecord user) {

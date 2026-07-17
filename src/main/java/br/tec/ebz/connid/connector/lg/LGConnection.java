@@ -4,6 +4,7 @@ import com.evolveum.polygon.common.GuardedStringAccessor;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
+import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.identityconnectors.common.logging.Log;
@@ -14,6 +15,7 @@ import org.identityconnectors.framework.common.exceptions.ConnectionFailedExcept
 import tools.jackson.databind.JsonNode;
 import tools.jackson.dataformat.xml.XmlMapper;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -38,29 +40,10 @@ public class LGConnection {
 
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
-        try (CloseableHttpClient client = HttpClients.createDefault()) {
+        try {
+            buildRequest(url, 1);
 
-            HttpPost post = buildRequest(url, 1);
-
-            try (CloseableHttpResponse response = client.execute(post)) {
-
-                int status = response.getCode();
-
-                if (status < 200 || status > 299) {
-                    String responseXml = EntityUtils.toString(
-                            response.getEntity(),
-                            StandardCharsets.UTF_8);
-
-                    XmlMapper mapper = new XmlMapper();
-                    JsonNode root = mapper.readTree(responseXml);
-                    String body = root.get("Body").get("Fault").get("faultstring").path("").asString();
-
-                    LOG.error("Falha no teste de conexão. HTTP {0} - {1}", status, body);
-                    throw new ConnectionFailedException(
-                            "Teste de conexão falhou. HTTP " + status);
-                }
-                EntityUtils.consume(response.getEntity());
-            }
+            LOG.info("Teste de conexão com LG realizado com sucesso.");
         } catch (Exception e) {
             throw new ConnectionFailedException("Erro ao conectar com a API", e);
         }
@@ -73,7 +56,7 @@ public class LGConnection {
         return accessor.getClearString();
     }
 
-    public HttpPost buildRequest(String url, int totalDePaginas) {
+    public String buildRequest(String url, int totalDePaginas) throws IOException{
         HttpPost post = new HttpPost(url);
         String xml = String.format("""
                         <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v2="lg.com.br/api/v2" xmlns:v1="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
@@ -106,7 +89,24 @@ public class LGConnection {
         post.setHeader("Accept", "text/xml");
         post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil");
 
-        return post;
+        return retornaHttpPost(post, response -> {
+            int status = response.getCode();
+            String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+
+            if (status < 200 || status > 299) {
+
+                XmlMapper mapper = new XmlMapper();
+                JsonNode root = mapper.readTree(responseBody);
+                String body = root.get("Body").get("Fault").get("faultstring").path("").asString();
+                LOG.error("Falha no teste de conexão: status {0}, body: {1}", status, body);
+                throw new ConnectionFailedException("Teste de conexão falhou: " + body);
+            }
+            return responseBody;
+        });
+    }
+
+    public String retornaHttpPost(HttpPost post, HttpClientResponseHandler<String> handler) throws IOException {
+        return httpClient.execute(post, handler);
     }
 
     public void dispose() {
