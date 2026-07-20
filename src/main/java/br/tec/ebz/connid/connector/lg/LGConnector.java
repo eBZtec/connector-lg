@@ -12,10 +12,11 @@ import org.identityconnectors.framework.spi.Connector;
 import org.identityconnectors.framework.spi.ConnectorClass;
 import org.identityconnectors.framework.spi.operations.*;
 
+import java.util.Date;
 import java.util.List;
 
 @ConnectorClass(displayNameKey = "lg.connector.display", configurationClass = LGConfiguration.class)
-public class LGConnector implements Connector, TestOp, SearchOp<Filter>, SchemaOp {
+public class LGConnector implements Connector, TestOp, SearchOp<Filter>, SchemaOp, SyncOp {
 
     private static final Log LOG = Log.getLog(LGConnector.class);
 
@@ -91,6 +92,23 @@ public class LGConnector implements Connector, TestOp, SearchOp<Filter>, SchemaO
         }
     }
 
+    @Override
+    public void sync(ObjectClass objectClass, SyncToken syncToken, SyncResultsHandler syncResultsHandler, OperationOptions operationOptions) {
+        try{
+            if (ObjectClass.ACCOUNT.equals(objectClass)){
+                UserProcessing userProcessing = new UserProcessing(this.connection, this.configuration);
+                userProcessing.sync(syncResultsHandler);
+            }
+        } catch (Exception e){
+            LOG.error("Não foi possivel fazer a sincronização devido ao erro: {0}", e.getMessage());
+        }
+    }
+
+    @Override
+    public SyncToken getLatestSyncToken(ObjectClass objectClass) {
+        Date dataAtual = new Date();
+        return new SyncToken(dataAtual.getTime());
+    }
 
     @Override
     public Schema schema() {

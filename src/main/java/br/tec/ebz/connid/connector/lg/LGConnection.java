@@ -3,7 +3,6 @@ package br.tec.ebz.connid.connector.lg;
 import com.evolveum.polygon.common.GuardedStringAccessor;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
@@ -41,12 +40,31 @@ public class LGConnection {
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         try {
-            buildRequest(url, 1);
+            findStatus(url);
 
             LOG.info("Teste de conexão com LG realizado com sucesso.");
         } catch (Exception e) {
             throw new ConnectionFailedException("Erro ao conectar com a API", e);
         }
+    }
+
+    public String findStatus(String url) throws IOException{
+        HttpPost post = new HttpPost(url);
+        String body = """ 
+                           <soapenv:Body>
+                           </soapenv:Body>
+                        """;
+
+        String xml = headler(body);
+
+        StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
+        post.setEntity(entity);
+
+        post.setHeader("Content-Type", "text/xml; charset=UTF-8");
+        post.setHeader("Accept", "text/xml");
+        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil");
+
+        return postRequest(post,"Teste de conexão falhou");
     }
 
     public String getPasswordAsString() {
@@ -56,11 +74,10 @@ public class LGConnection {
         return accessor.getClearString();
     }
 
-    public String buildRequest(String url, int totalDePaginas) throws IOException{
-        HttpPost post = new HttpPost(url);
-        String xml = String.format("""
-                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v2="lg.com.br/api/v2" xmlns:v1="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-                           <soapenv:Header>
+    public String headler(String body){
+        return String.format("""
+                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v1="lg.com.br/api/v1" xmlns:v2="lg.com.br/api/v2" xmlns:v11="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                              <soapenv:Header>
                               <dto:LGAutenticacao>
                                  <dto:TokenUsuario>
                                     <dto:Senha>%s</dto:Senha>
@@ -72,23 +89,18 @@ public class LGConnection {
                                  <dto:Ambiente>%s</dto:Ambiente>
                               </dto:LGContextoAmbiente>
                            </soapenv:Header>
-                           <soapenv:Body>
-                           </soapenv:Body>
+                            %s
                         </soapenv:Envelope>
                         """,
                 getPasswordAsString(),
                 configuration.getUsuario(),
                 configuration.getGuidtenant(),
                 configuration.getAmbiente(),
-                totalDePaginas
+                body
         );
-        StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
-        post.setEntity(entity);
+    }
 
-        post.setHeader("Content-Type", "text/xml; charset=UTF-8");
-        post.setHeader("Accept", "text/xml");
-        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil");
-
+    public String postRequest(HttpPost post, String mensagemErro) throws IOException {
         return retornaHttpPost(post, response -> {
             int status = response.getCode();
             String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
@@ -97,10 +109,11 @@ public class LGConnection {
 
                 XmlMapper mapper = new XmlMapper();
                 JsonNode root = mapper.readTree(responseBody);
-                String body = root.get("Body").get("Fault").get("faultstring").path("").asString();
-                LOG.error("Falha no teste de conexão: status {0}, body: {1}", status, body);
-                throw new ConnectionFailedException("Teste de conexão falhou: " + body);
+                String mensagem = root.get("Body").get("Fault").get("faultstring").path("").asString();
+                LOG.error("Post FALHOU: status {1}, body: {2}", status, mensagem);
+                throw new ConnectionFailedException( mensagemErro + " : " + mensagem);
             }
+
             return responseBody;
         });
     }
