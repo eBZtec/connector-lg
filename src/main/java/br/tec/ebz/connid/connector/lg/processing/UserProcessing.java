@@ -33,73 +33,70 @@ public class UserProcessing extends ObjectHandler {
     }
 
     public void search(String uid, ResultsHandler resultsHandler) {
-        int pageNumber = 1;
-        PageResult page;
-        do {
-            page = fetchUserPage(pageNumber, uid);
-            LOG.info("Página {0} consultada.", pageNumber);
-            for (UserRecord user : page.users()) {
-                if (uid == null) {
+        if (uid == null) {
+            int pageNumber = 1;
+            PageResult page;
+            do {
+                page = fetchUserPage(pageNumber);
+                for (UserRecord user : page.users()) {
                     resultsHandler.handle(translate(user, null, null, null));
-                } else {
-                    int uidFiltro = Integer.parseInt(uid);
-                    int uidUsuario = Integer.parseInt(user.matricula());
-
-                    if (uidUsuario == uidFiltro) {
-                        resultsHandler.handle(translate(user, null, null, null));
-                        return;
-                    }
                 }
+                pageNumber++;
+            } while (pageNumber <= page.totalPages());
+        } else {
+            UserRecord user = fetchUserByUid(uid);
+            if (user != null) {
+                resultsHandler.handle(translate(user, null, null, null));
             }
-            pageNumber++;
-        } while (pageNumber <= page.totalPages());
+        }
     }
 
-//    private void fetchUserByUid( String uid) {
-//        String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
-//
-//        try {
-//            String responseXml = executeSoapRequest(url,
-//                    Body.createUserManagerSearchBody("ConsultarContratosAplicandoAutorizacaoDePerfil",
-//                            String.format("<v1:PaginaAtual>%d</v1:PaginaAtual>", page)),
-//                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil", "Erro ao buscar usuário");
-//
-//            XmlMapper mapper = new XmlMapper();
-//
-//            JsonNode root = mapper.readTree(responseXml);
-//            JsonNode result = root.get("Body").get("ConsultarContratosAplicandoAutorizacaoDePerfilResponse").get("ConsultarContratosAplicandoAutorizacaoDePerfilResult");
-//            JsonNode contratos = result.get("Retorno").path("ContratoDeTrabalhoV3");
-//
-//            List<UserRecord> users = new ArrayList<>();
-//
-//            for (JsonNode contrato : contratos) {
-//                String matricula = contrato.path("DadosGerais").path("Matricula").asString();
-//                String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
-//
-//                Map<String, String> gestor = findSuperior(matricula, empresa);
-//
-//                users.add(new UserRecord(
-//                        contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
-//                        contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
-//                        contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
-//                        contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
-//                        contrato.path("Pessoa").path("Contato").path("EmailParticular").asString(),
-//                        matricula,
-//                        contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
-//                        contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
-//                        contrato.path("DadosGerais").path("DataAdmissao").asString(),
-//                        contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
-//                        empresa,
-//                        gestor != null ? gestor.get(NOME_SUPERIOR) : null
-//                ));
-//            }
-//        } catch (Exception e) {
-//            LOG.error("Erro ao processar usuários: {0}", e.getMessage());
-//            throw new ConnectionFailedException(e.getMessage());
-//        }
-//    }
+    private UserRecord fetchUserByUid(String uid) {
+        String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
-    private PageResult fetchUserPage(int page, String uid) {
+        String[] uidPartes = uid.split(";");
+        String codigoEmpresa = uidPartes[1];
+        String id = uidPartes[0];
+
+        try {
+            String responseXml = executeSoapRequest(url,
+                    Body.createUserFilter("Consultar", codigoEmpresa, id),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/Consultar", "Erro ao buscar usuário");
+
+            XmlMapper mapper = new XmlMapper();
+
+            JsonNode root = mapper.readTree(responseXml);
+            JsonNode contrato = root.get("Body").get("ConsultarResponse").get("ConsultarResult").get("Retorno");
+
+            if (contrato == null) {
+                LOG.info("Nenhum contrato encontrado para {0}", uid);
+                return null;
+            }
+
+            String matricula = contrato.path("Matricula").asString();
+            String empresa = contrato.path("Empresa").path("Codigo").asString();
+
+            Map<String, String> gestor = findSuperior(matricula, empresa);
+
+            return new UserRecord(
+                    contrato.path("Cargo").path("Descricao").asString(),
+                    contrato.path("Empresa").path("Descricao").asString(),
+                    contrato.path("UnidadeOrganizacional").path("Descricao").asString(),
+                    matricula,
+                    contrato.path("Pessoa").path("Nome").asString(),
+                    contrato.path("Pessoa").path("DataDeNascimento").asString(),
+                    contrato.path("DataAdmissao").asString(),
+                    null,
+                    empresa,
+                    gestor != null ? gestor.get(NOME_SUPERIOR) : null
+            );
+        } catch (Exception e) {
+            LOG.error("Erro ao processar usuários: {0}", e.getMessage());
+            throw new ConnectionFailedException(e.getMessage());
+        }
+    }
+
+    private PageResult fetchUserPage(int page) {
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         try {
@@ -121,11 +118,6 @@ public class UserProcessing extends ObjectHandler {
 
             for (JsonNode contrato : contratos) {
                 String matricula = contrato.path("DadosGerais").path("Matricula").asString();
-
-                if (uid != null && !uid.equals(matricula)) {
-                    continue;
-                }
-
                 String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
 
                 Map<String, String> gestor = findSuperior(matricula, empresa);
@@ -134,8 +126,6 @@ public class UserProcessing extends ObjectHandler {
                         contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
                         contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
                         contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
-                        contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
-                        contrato.path("Pessoa").path("Contato").path("EmailParticular").asString(),
                         matricula,
                         contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
                         contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
@@ -232,22 +222,14 @@ public class UserProcessing extends ObjectHandler {
 
     public ConnectorObject findByMatricula(String matricula, TipoConsulta consulta, String dataInicio, String dataFim) {
         LOG.info("Buscando matrícula {0}", matricula);
-        int pageNumber = 1;
-        PageResult page;
 
-        do {
-            page = fetchUserPage(pageNumber, matricula);
-            LOG.info("Consultando página {0} em busca da matrícula {1}", pageNumber, matricula);
+        UserRecord user = fetchUserByUid(matricula);
 
-            for (UserRecord user : page.users()) {
-                LOG.info("Matrícula encontrada na página: {0}", user.matricula());
-                if (matricula.equals(user.matricula())) {
-                    LOG.info("Usuário localizado.");
-                    return translate(user, consulta, dataInicio, dataFim);
-                }
-            }
-            pageNumber++;
-        } while (pageNumber <= page.totalPages());
+        if (user != null) {
+            LOG.info("Usuário localizado: {0}", user.matricula());
+            return translate(user, consulta, dataInicio, dataFim);
+        }
+
         return null;
     }
 
@@ -345,15 +327,16 @@ public class UserProcessing extends ObjectHandler {
 
         for (JsonNode objeto : contratos) {
 
-            JsonNode periodos = objeto.path("Operacoes")
-                    .path(consulta.operacaoNode())
-                    .path("PeriodoDaOcorrencia");
+            JsonNode operacoes = objeto.path("Operacoes")
+                    .path(consulta.operacaoNode());
 
-            if (!periodos.isArray()) {
-                periodos = mapper.createArrayNode().add(periodos);
+            if (!operacoes.isArray()) {
+                operacoes = mapper.createArrayNode().add(operacoes);
             }
 
-            for (JsonNode periodo : periodos) {
+            for (JsonNode operacao : operacoes) {
+
+                JsonNode periodo = operacao.path("PeriodoDaOcorrencia");
 
                 String matricula = objeto.path("IdentificacaoDeContrato")
                         .path("Matricula")
@@ -362,7 +345,11 @@ public class UserProcessing extends ObjectHandler {
                 String inicio = periodo.path("DataInicio").asString();
                 String fim = periodo.path("DataFim").asString();
 
-                ConnectorObject usuario = findByMatricula(matricula, consulta, inicio, fim);
+                LOG.info("Processando {0} - Matrícula {1}, início {2}, fim {3}", consulta.tipo(), matricula, inicio, fim);
+
+                String uid = matricula + ";" + company;
+
+                ConnectorObject usuario = findByMatricula(uid, consulta, inicio, fim);
 
                 if (usuario != null) {
                     SyncDeltaBuilder builder = new SyncDeltaBuilder();
@@ -395,15 +382,15 @@ public class UserProcessing extends ObjectHandler {
         ConnectorObjectBuilder builder = new ConnectorObjectBuilder();
         builder.setObjectClass(ObjectClass.ACCOUNT);
 
-        addAttribute(builder, Name.NAME, user.matricula());
-        addAttribute(builder, Uid.NAME, user.matricula());
+        String name = user.matricula() + ";" + user.codigoEmpresa();
+
+        addAttribute(builder, Name.NAME, name);
+        addAttribute(builder, Uid.NAME, name);
         addAttribute(builder, USER_NOME, user.nome());
         addAttribute(builder, USER_CARGO, user.cargo());
         addAttribute(builder, USER_EMPRESA, user.empresa());
         addAttribute(builder, USER_OU, user.organizacao());
         addAttribute(builder, USER_DATA_ADMISSAO, user.dataAdmissao());
-        addAttribute(builder, USER_EMAIL_CORPORATIVO, user.emailCorporativo());
-        addAttribute(builder, USER_EMAIL_PATICULAR, user.emailParticular());
         addAttribute(builder, USER_DATA_DE_NASCIMENTO, user.dataDeNascimento());
         addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
         addAttribute(builder, NOME_SUPERIOR, user.gestor());
@@ -474,20 +461,6 @@ public class UserProcessing extends ObjectHandler {
                         USER_DATA_ADMISSAO,
                         Date.class,
                         USER_DATA_ADMISSAO
-                )
-        );
-        objectClassInfoBuilder.addAttributeInfo(
-                buildAttributeInfo(
-                        USER_EMAIL_CORPORATIVO,
-                        String.class,
-                        USER_EMAIL_CORPORATIVO
-                )
-        );
-        objectClassInfoBuilder.addAttributeInfo(
-                buildAttributeInfo(
-                        USER_EMAIL_PATICULAR,
-                        String.class,
-                        USER_EMAIL_PATICULAR
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(

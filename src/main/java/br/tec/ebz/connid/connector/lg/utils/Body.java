@@ -26,6 +26,28 @@ public class Body {
         );
     }
 
+    public static String createUserFilter(String tipo, String codigoEmpresa, String matricula){
+        return String.format("""
+                        <soapenv:Body>
+                              <v2:%1$s>
+                                 <v2:filtro>
+                                     <v1:Colaborador>
+                                         <v1:Empresa>
+                                             <v1:Codigo>%2$s</v1:Codigo>
+                                         </v1:Empresa>
+                                         <v1:Matricula>%3$s</v1:Matricula>
+                                     </v1:Colaborador>
+                                 </v2:filtro>
+                              </v2:%1$s>
+                           </soapenv:Body>
+                        """,
+                tipo,
+                codigoEmpresa,
+                matricula
+        );
+    }
+
+
     public static String createModifiedContractsSearchBody(String tipo, String codigoEmpresa,String dataFim, String dataInicio, String operacaoExtra) {
         return String.format("""
             <soapenv:Body>
