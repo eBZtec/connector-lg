@@ -26,7 +26,7 @@ public class Body {
         );
     }
 
-    public static String createModifiedContractsSearchBody(String tipo, String codigoEmpresa,String dataFim, String dataInicio, String operacaoExtra,String complemento) {
+    public static String createModifiedContractsSearchBody(String tipo, String codigoEmpresa,String dataFim, String dataInicio, String operacaoExtra) {
         return String.format("""
             <soapenv:Body>
                <v2:%1$s>
@@ -36,14 +36,7 @@ public class Body {
                         <v1:DataFim>%3$s</v1:DataFim>
                         <v1:DataInicio>%4$s</v1:DataInicio>
                      </v1:PeriodoDeBusca>
-                     <v1:TiposDeOperacoes>
-                        <v1:TipoDeOperacaoDaOcorrencia>
-                           <v1:Valor>1</v1:Valor>
-                           <v1:Valor>2</v1:Valor>
-                           %5$s
-                        </v1:TipoDeOperacaoDaOcorrencia>
-                     </v1:TiposDeOperacoes>
-                     %6$s
+                     %5$s
                   </v2:filtro>
                </v2:%1$s>
             </soapenv:Body>
@@ -52,8 +45,7 @@ public class Body {
                 codigoEmpresa,
                 dataFim,
                 dataInicio,
-                operacaoExtra,
-                complemento
+                operacaoExtra
         );
     }
 }

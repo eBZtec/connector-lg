@@ -3,6 +3,7 @@ package br.tec.ebz.connid.connector.lg.processing;
 import br.tec.ebz.connid.connector.lg.*;
 import br.tec.ebz.connid.connector.lg.model.Gestor;
 import br.tec.ebz.connid.connector.lg.model.PageResult;
+import br.tec.ebz.connid.connector.lg.model.TipoConsulta;
 import br.tec.ebz.connid.connector.lg.model.UserRecord;
 import br.tec.ebz.connid.connector.lg.utils.ObjectHandler;
 import br.tec.ebz.connid.connector.lg.utils.Body;
@@ -36,15 +37,16 @@ public class UserProcessing extends ObjectHandler {
         PageResult page;
         do {
             page = fetchUserPage(pageNumber, uid);
+            LOG.info("Página {0} consultada.", pageNumber);
             for (UserRecord user : page.users()) {
                 if (uid == null) {
-                    resultsHandler.handle(translate(user, null));
+                    resultsHandler.handle(translate(user, null, null, null));
                 } else {
                     int uidFiltro = Integer.parseInt(uid);
                     int uidUsuario = Integer.parseInt(user.matricula());
 
                     if (uidUsuario == uidFiltro) {
-                        resultsHandler.handle(translate(user, null));
+                        resultsHandler.handle(translate(user, null, null, null));
                         return;
                     }
                 }
@@ -53,14 +55,58 @@ public class UserProcessing extends ObjectHandler {
         } while (pageNumber <= page.totalPages());
     }
 
+//    private void fetchUserByUid( String uid) {
+//        String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
+//
+//        try {
+//            String responseXml = executeSoapRequest(url,
+//                    Body.createUserManagerSearchBody("ConsultarContratosAplicandoAutorizacaoDePerfil",
+//                            String.format("<v1:PaginaAtual>%d</v1:PaginaAtual>", page)),
+//                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil", "Erro ao buscar usuário");
+//
+//            XmlMapper mapper = new XmlMapper();
+//
+//            JsonNode root = mapper.readTree(responseXml);
+//            JsonNode result = root.get("Body").get("ConsultarContratosAplicandoAutorizacaoDePerfilResponse").get("ConsultarContratosAplicandoAutorizacaoDePerfilResult");
+//            JsonNode contratos = result.get("Retorno").path("ContratoDeTrabalhoV3");
+//
+//            List<UserRecord> users = new ArrayList<>();
+//
+//            for (JsonNode contrato : contratos) {
+//                String matricula = contrato.path("DadosGerais").path("Matricula").asString();
+//                String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
+//
+//                Map<String, String> gestor = findSuperior(matricula, empresa);
+//
+//                users.add(new UserRecord(
+//                        contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
+//                        contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
+//                        contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
+//                        contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
+//                        contrato.path("Pessoa").path("Contato").path("EmailParticular").asString(),
+//                        matricula,
+//                        contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
+//                        contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
+//                        contrato.path("DadosGerais").path("DataAdmissao").asString(),
+//                        contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
+//                        empresa,
+//                        gestor != null ? gestor.get(NOME_SUPERIOR) : null
+//                ));
+//            }
+//        } catch (Exception e) {
+//            LOG.error("Erro ao processar usuários: {0}", e.getMessage());
+//            throw new ConnectionFailedException(e.getMessage());
+//        }
+//    }
+
     private PageResult fetchUserPage(int page, String uid) {
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         try {
             String responseXml = executeSoapRequest(url,
                     Body.createUserManagerSearchBody("ConsultarContratosAplicandoAutorizacaoDePerfil",
-                            String.format("<v1:PaginaAtual>%d</v1:PaginaAtual>",page)),
-                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil", "Erro ao buscar usuário");
+                            String.format("<v1:PaginaAtual>%d</v1:PaginaAtual>", page)),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil", "Erro ao buscar usuários");
 
             XmlMapper mapper = new XmlMapper();
 
@@ -136,13 +182,13 @@ public class UserProcessing extends ObjectHandler {
             String responseXml = executeSoapRequest(url,
                     Body.createUserManagerSearchBody("ConsultarListaGestoresNivelMaisProximo",
                             String.format("""
-                                   <v11:Colaborador>
-                                      <v11:Empresa>
-                                        <v11:Codigo>%s</v11:Codigo>
-                                      </v11:Empresa>
-                                      <v11:Matricula>%s</v11:Matricula>
-                                   </v11:Colaborador>
-                                   """,
+                                            <v11:Colaborador>
+                                               <v11:Empresa>
+                                                 <v11:Codigo>%s</v11:Codigo>
+                                               </v11:Empresa>
+                                               <v11:Matricula>%s</v11:Matricula>
+                                            </v11:Colaborador>
+                                            """,
                                     codigoEmpresa,
                                     matricula)),
                     "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaGestoresNivelMaisProximo", "Erro ao buscar gestor");
@@ -184,19 +230,20 @@ public class UserProcessing extends ObjectHandler {
         return connection.postRequest(post, mensagemErro);
     }
 
-    public ConnectorObject findByMatricula(String matricula, String dataDemissao) throws IOException {
+    public ConnectorObject findByMatricula(String matricula, TipoConsulta consulta, String dataInicio, String dataFim) {
         LOG.info("Buscando matrícula {0}", matricula);
         int pageNumber = 1;
         PageResult page;
 
         do {
             page = fetchUserPage(pageNumber, matricula);
+            LOG.info("Consultando página {0} em busca da matrícula {1}", pageNumber, matricula);
 
             for (UserRecord user : page.users()) {
                 LOG.info("Matrícula encontrada na página: {0}", user.matricula());
                 if (matricula.equals(user.matricula())) {
                     LOG.info("Usuário localizado.");
-                    return translate(user, dataDemissao);
+                    return translate(user, consulta, dataInicio, dataFim);
                 }
             }
             pageNumber++;
@@ -231,91 +278,120 @@ public class UserProcessing extends ObjectHandler {
         String[] companies = configuration.getEmpresas().split(",");
 
         for (String company : companies) {
-            LOG.info("Pesquisando demissões da empresa {0}", company);
+            LOG.info("Pesquisando ações da empresa {0}", company);
             LOG.info("Período consultado: {0} até {1}", startDate, endDate);
 
-            String responseDemitidoXml = executeSoapRequest(endPoint,
-                    Body.createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorRescisao", company, endDate, startDate,
-                            "",""),
-                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorRescisao",
-                    "Erro ao buscar demissão");
-
             String responseFeriasXml = executeSoapRequest(endPoint,
-                    Body.createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorFerias", company, endDate, startDate,
-                            "<v1:Valor>3</v1:Valor>", "<v1:TipoDeFerias>1064</v1:TipoDeFerias>"),
-                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorAfastamento",
-                    "Erro ao buscar férias");;
+                    Body.createModifiedContractsSearchBody("ConsultarListaDeModificadosPorFerias", company, endDate, startDate,
+                            """
+                                    <v1:TiposDeOperacoes>
+                                       <v1:TipoDeOperacaoDaOcorrencia>
+                                          <v1:Valor>1</v1:Valor>
+                                          <v1:Valor>2</v1:Valor>
+                                          <v1:Valor>3</v1:Valor>
+                                       </v1:TipoDeOperacaoDaOcorrencia>
+                                    </v1:TiposDeOperacoes>
+                                    <v1:TipoDeFerias>1064</v1:TipoDeFerias>
+                                    """),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorFerias",
+                    "Erro ao buscar férias");
+            ;
 
             String responseAfastamentoXml = executeSoapRequest(endPoint,
-                    Body.createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorAfastamento", company, endDate, startDate,
-                            "",""),
+                    Body.createModifiedContractsSearchBody("ConsultarListaDeModificadosPorAfastamento", company, endDate, startDate,
+                            """
+                                    <v1:TiposDeOperacoes>
+                                       <v1:TipoDeOperacaoDaOcorrencia>
+                                          <v1:Valor>1</v1:Valor>
+                                          <v1:Valor>2</v1:Valor>
+                                       </v1:TipoDeOperacaoDaOcorrencia>
+                                    </v1:TiposDeOperacoes>
+                                    """),
                     "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorAfastamento",
                     "Erro ao buscar afastamento");
 
-            LOG.info("Resposta SOAP: {0}", responseDemitidoXml);
+            LOG.info("Resposta SOAP: {0}", responseFeriasXml);
+            LOG.info("Resposta SOAP: {0}", responseAfastamentoXml);
 
             XmlMapper mapper = new XmlMapper();
-            JsonNode root = mapper.readTree(responseDemitidoXml);
 
-            JsonNode contratos = root.path("Body")
-                    .path("ConsultarListaDeModificadosPorRescisaoResponse")
-                    .path("ConsultarListaDeModificadosPorRescisaoResult")
-                    .path("Retorno")
-                    .path("ContratoDeTrabalhoModificadoPorRescisao");
+            processarFeriasAfastamentos(responseFeriasXml, company, FERIAS, startDate, endDate, mapper, syncResultsHandler);
 
-            if (root.isMissingNode()
-                    || root.isNull()
-                    || contratos.isMissingNode()
-                    || contratos.isNull()) {
+            processarFeriasAfastamentos(responseAfastamentoXml, company, AFASTAMENTO, startDate, endDate, mapper, syncResultsHandler);
 
-                LOG.info("Empresa {0} sem usuários rescindidos no período {1} até {2}.", company, startDate,endDate);
-
-                continue;
-            }
-
-            if (!contratos.isArray()) {
-                contratos = mapper.createArrayNode().add(contratos);
-            }
-
-            LOG.info("Empresa {0}: encontrados {1} contrato(s) rescindido(s).",company,contratos.size());
-
-            for (JsonNode objetoDemissao : contratos) {
-
-                JsonNode operacoes = objetoDemissao.path("Operacoes").path("OperacaoDeRescisao");
-
-                if (!operacoes.isArray()) {
-                    operacoes = mapper.createArrayNode().add(operacoes);
-                }
-
-                for (JsonNode operacao : operacoes) {
-
-                    String matricula = objetoDemissao.path("IdentificacaoDeContrato").path("Matricula").asString();
-                    String dataRescisao = operacao.path("DataDaRescisao").asString();
-
-                    LOG.info("Processando matrícula {0}", matricula);
-
-                    ConnectorObject usuarioDemitido = findByMatricula(matricula, dataRescisao);
-
-                    LOG.info("Resultado da busca: {0}", usuarioDemitido);
-
-                    if (usuarioDemitido != null) {
-
-                        SyncDeltaBuilder builder = new SyncDeltaBuilder();
-
-                        builder.setObjectClass(ObjectClass.ACCOUNT);
-                        builder.setDeltaType(SyncDeltaType.CREATE_OR_UPDATE);
-                        builder.setObject(usuarioDemitido);
-                        builder.setToken(new SyncToken(System.currentTimeMillis()));
-
-                        syncResultsHandler.handle(builder.build());
-                    }
-                }
-            }
             LOG.info("Fim do processo da empresa {0}", company);
         }
     }
 
-    private ConnectorObject translate(UserRecord user, String dataDemissao) {
+    public void processarFeriasAfastamentos(String responseXml, String company, TipoConsulta consulta, String startDate, String endDate, XmlMapper mapper, SyncResultsHandler handler) throws IOException {
+
+        JsonNode root = mapper.readTree(responseXml);
+
+        JsonNode contratos = root.path("Body")
+                .path(consulta.responseNode())
+                .path(consulta.resultNode())
+                .path("Retorno")
+                .path(consulta.contratoNode());
+
+        if (contratos.isMissingNode() || contratos.isNull()) {
+            LOG.info("Empresa {0} sem usuários de {1} no período {2} até {3}.",
+                    company, consulta.tipo(), startDate, endDate);
+            return;
+        }
+
+        if (!contratos.isArray()) {
+            contratos = mapper.createArrayNode().add(contratos);
+        }
+
+        for (JsonNode objeto : contratos) {
+
+            JsonNode periodos = objeto.path("Operacoes")
+                    .path(consulta.operacaoNode())
+                    .path("PeriodoDaOcorrencia");
+
+            if (!periodos.isArray()) {
+                periodos = mapper.createArrayNode().add(periodos);
+            }
+
+            for (JsonNode periodo : periodos) {
+
+                String matricula = objeto.path("IdentificacaoDeContrato")
+                        .path("Matricula")
+                        .asString();
+
+                String inicio = periodo.path("DataInicio").asString();
+                String fim = periodo.path("DataFim").asString();
+
+                ConnectorObject usuario = findByMatricula(matricula, consulta, inicio, fim);
+
+                if (usuario != null) {
+                    SyncDeltaBuilder builder = new SyncDeltaBuilder();
+                    builder.setObjectClass(ObjectClass.ACCOUNT);
+                    builder.setDeltaType(SyncDeltaType.CREATE_OR_UPDATE);
+                    builder.setObject(usuario);
+                    builder.setToken(new SyncToken(System.currentTimeMillis()));
+
+                    handler.handle(builder.build());
+                }
+            }
+        }
+    }
+
+    public static final TipoConsulta FERIAS = new TipoConsulta(
+            "férias",
+            "ConsultarListaDeModificadosPorFeriasResponse",
+            "ConsultarListaDeModificadosPorFeriasResult",
+            "ContratoDeTrabalhoModificadoPorFerias",
+            "OperacaoDeFerias");
+
+    public static final TipoConsulta AFASTAMENTO = new TipoConsulta(
+            "afastamento",
+            "ConsultarListaDeModificadosPorAfastamentoResponse",
+            "ConsultarListaDeModificadosPorAfastamentoResult",
+            "ContratoDeTrabalhoModificadoPorAfastamento",
+            "OperacaoDeAfastamento");
+
+    private ConnectorObject translate(UserRecord user, TipoConsulta consulta, String dataInicio, String dataFim) {
         ConnectorObjectBuilder builder = new ConnectorObjectBuilder();
         builder.setObjectClass(ObjectClass.ACCOUNT);
 
@@ -331,13 +407,18 @@ public class UserProcessing extends ObjectHandler {
         addAttribute(builder, USER_DATA_DE_NASCIMENTO, user.dataDeNascimento());
         addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
         addAttribute(builder, NOME_SUPERIOR, user.gestor());
-        if (dataDemissao != null && !dataDemissao.isBlank()) {
-            addAttribute(builder, "dataDaRescisao", dataDemissao);
+        if (consulta != null) {
+            if ("férias".equals(consulta.tipo())) {
+                addAttribute(builder, USER_DATA_INICIO_FERIAS, dataInicio);
+                addAttribute(builder, USER_DATA_FIM_FERIAS, dataFim);
+            } else if ("afastamento".equals(consulta.tipo())) {
+                addAttribute(builder, USER_DATA_INICIO_AFASTAMENTO, dataInicio);
+                addAttribute(builder, USER_DATA_FIM_AFASTAMENTO, dataFim);
+            }
         }
 
         return builder.build();
     }
-
 
     public ObjectClassInfoBuilder userSchemaBuilder() {
         ObjectClassInfoBuilder objectClassInfoBuilder = new ObjectClassInfoBuilder();
@@ -428,6 +509,34 @@ public class UserProcessing extends ObjectHandler {
                         NOME_SUPERIOR,
                         Date.class,
                         NOME_SUPERIOR
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_DATA_INICIO_FERIAS,
+                        Date.class,
+                        USER_DATA_FIM_FERIAS
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_DATA_FIM_FERIAS,
+                        Date.class,
+                        USER_DATA_FIM_FERIAS
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_DATA_INICIO_AFASTAMENTO,
+                        Date.class,
+                        USER_DATA_INICIO_AFASTAMENTO
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_DATA_FIM_AFASTAMENTO,
+                        Date.class,
+                        USER_DATA_FIM_AFASTAMENTO
                 )
         );
         return objectClassInfoBuilder;

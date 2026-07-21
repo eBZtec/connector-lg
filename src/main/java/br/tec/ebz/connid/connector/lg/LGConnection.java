@@ -76,7 +76,13 @@ public class LGConnection {
 
     public String headler(String body){
         return String.format("""
-                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:dto="lg.com.br/svc/dto" xmlns:v1="lg.com.br/api/v1" xmlns:v2="lg.com.br/api/v2" xmlns:v11="lg.com.br/api/dto/v1" xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                        <soapenv:Envelope
+                                    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                                    xmlns:dto="lg.com.br/svc/dto"
+                                    xmlns:v1="lg.com.br/api/dto/v1"
+                                    xmlns:v2="lg.com.br/api/v2"
+                                    xmlns:v11="lg.com.br/api/dto/v1"
+                                    xmlns:arr="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
                               <soapenv:Header>
                               <dto:LGAutenticacao>
                                  <dto:TokenUsuario>

@@ -17,7 +17,7 @@ public class SyncOpTest extends BaseTestConnection {
     private static final Log LOG = Log.getLog(SyncToken.class);
 
     @Test(groups = "Sync", priority = 1)
-    public void deveSincronizarUsuariosDemitidos(){
+    public void deveSincronizarUsuarios(){
         ConnectorFacade facade = setupConnector();
         ListSyncResultHandler listSyncResultHandler = new ListSyncResultHandler();
         facade.sync(ObjectClass.ACCOUNT, null, listSyncResultHandler, null);
