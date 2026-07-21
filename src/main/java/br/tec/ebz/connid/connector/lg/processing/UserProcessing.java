@@ -17,6 +17,8 @@ import tools.jackson.dataformat.xml.XmlMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import static br.tec.ebz.connid.connector.lg.SchemaHandler.*;
@@ -325,6 +327,8 @@ public class UserProcessing extends ObjectHandler {
             contratos = mapper.createArrayNode().add(contratos);
         }
 
+        LocalDate dataFiltro = LocalDate.parse(startDate);
+
         for (JsonNode objeto : contratos) {
 
             JsonNode operacoes = objeto.path("Operacoes")
@@ -334,32 +338,59 @@ public class UserProcessing extends ObjectHandler {
                 operacoes = mapper.createArrayNode().add(operacoes);
             }
 
+            JsonNode periodoSelecionado = null;
+            long menorDiferenca = Long.MAX_VALUE;
+
             for (JsonNode operacao : operacoes) {
 
                 JsonNode periodo = operacao.path("PeriodoDaOcorrencia");
 
-                String matricula = objeto.path("IdentificacaoDeContrato")
-                        .path("Matricula")
-                        .asString();
-
                 String inicio = periodo.path("DataInicio").asString();
-                String fim = periodo.path("DataFim").asString();
 
-                LOG.info("Processando {0} - Matrícula {1}, início {2}, fim {3}", consulta.tipo(), matricula, inicio, fim);
-
-                String uid = matricula + ";" + company;
-
-                ConnectorObject usuario = findByMatricula(uid, consulta, inicio, fim);
-
-                if (usuario != null) {
-                    SyncDeltaBuilder builder = new SyncDeltaBuilder();
-                    builder.setObjectClass(ObjectClass.ACCOUNT);
-                    builder.setDeltaType(SyncDeltaType.CREATE_OR_UPDATE);
-                    builder.setObject(usuario);
-                    builder.setToken(new SyncToken(System.currentTimeMillis()));
-
-                    handler.handle(builder.build());
+                if (inicio == null || inicio.isBlank()) {
+                    continue;
                 }
+
+                LocalDate dataInicioAfastamento =
+                        LocalDate.parse(inicio.substring(0, 10));
+
+                long diferenca = Math.abs(
+                        ChronoUnit.DAYS.between(dataFiltro, dataInicioAfastamento)
+                );
+
+                if (diferenca < menorDiferenca) {
+                    menorDiferenca = diferenca;
+                    periodoSelecionado = periodo;
+                }
+            }
+
+            if (periodoSelecionado == null) {
+                continue;
+            }
+
+            String matricula = objeto.path("IdentificacaoDeContrato")
+                    .path("Matricula")
+                    .asString();
+
+            String inicio = periodoSelecionado.path("DataInicio").asString();
+            String fim = periodoSelecionado.path("DataFim").asString();
+
+            LOG.info("Processando {0} - Matrícula {1}, início {2}, fim {3}",
+                    consulta.tipo(), matricula, inicio, fim);
+
+            String uid = matricula + ";" + company;
+
+            ConnectorObject usuario = findByMatricula(uid, consulta, inicio, fim);
+
+            if (usuario != null) {
+
+                SyncDeltaBuilder builder = new SyncDeltaBuilder();
+                builder.setObjectClass(ObjectClass.ACCOUNT);
+                builder.setDeltaType(SyncDeltaType.CREATE_OR_UPDATE);
+                builder.setObject(usuario);
+                builder.setToken(new SyncToken(System.currentTimeMillis()));
+
+                handler.handle(builder.build());
             }
         }
     }
