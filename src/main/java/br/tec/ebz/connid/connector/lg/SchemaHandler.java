@@ -12,4 +12,8 @@ public interface SchemaHandler {
     String USER_NOME = "Nome";
     String USER_DATA_DE_RESCISAO = "DataDaRescisao";
     String NOME_SUPERIOR = "Gestor";
+    String USER_DATA_INICIO_FERIAS = "DataInicioFerias";
+    String USER_DATA_FIM_FERIAS = "DataFimFerias";
+    String USER_DATA_INICIO_AFASTAEMNTO = "DataInicioAfastamento";
+    String USER_DATA_FIM_AFASTAEMNTO = "DataFimAfastamento";
 }

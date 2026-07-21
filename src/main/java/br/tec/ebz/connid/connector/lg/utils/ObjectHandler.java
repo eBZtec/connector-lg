@@ -1,4 +1,4 @@
-package br.tec.ebz.connid.connector.lg.processing;
+package br.tec.ebz.connid.connector.lg.utils;
 
 import org.identityconnectors.common.security.GuardedString;
 import org.identityconnectors.framework.common.exceptions.InvalidAttributeValueException;
@@ -6,7 +6,7 @@ import org.identityconnectors.framework.common.objects.*;
 
 import java.util.*;
 
-public class ObjectProcessing {
+public class ObjectHandler {
 
     public static <T> T getAttributeValue(String name, Class<T> type, Set<Attribute> attributes) {
         Attribute attr = AttributeUtil.find(name, attributes);

@@ -4,6 +4,8 @@ import br.tec.ebz.connid.connector.lg.*;
 import br.tec.ebz.connid.connector.lg.model.Gestor;
 import br.tec.ebz.connid.connector.lg.model.PageResult;
 import br.tec.ebz.connid.connector.lg.model.UserRecord;
+import br.tec.ebz.connid.connector.lg.utils.ObjectHandler;
+import br.tec.ebz.connid.connector.lg.utils.Body;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.identityconnectors.common.logging.Log;
@@ -18,7 +20,7 @@ import java.util.*;
 
 import static br.tec.ebz.connid.connector.lg.SchemaHandler.*;
 
-public class UserProcessing extends ObjectProcessing {
+public class UserProcessing extends ObjectHandler {
     private static final Log LOG = Log.getLog(UserProcessing.class);
 
     private final LGConnection connection;
@@ -32,7 +34,6 @@ public class UserProcessing extends ObjectProcessing {
     public void search(String uid, ResultsHandler resultsHandler) {
         int pageNumber = 1;
         PageResult page;
-
         do {
             page = fetchUserPage(pageNumber, uid);
             for (UserRecord user : page.users()) {
@@ -56,7 +57,10 @@ public class UserProcessing extends ObjectProcessing {
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         try {
-            String responseXml = fetchContractsPage(url, page);
+            String responseXml = executeSoapRequest(url,
+                    Body.createUserManagerSearchBody("ConsultarContratosAplicandoAutorizacaoDePerfil",
+                            String.format("<v1:PaginaAtual>%d</v1:PaginaAtual>",page)),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil", "Erro ao buscar usuário");
 
             XmlMapper mapper = new XmlMapper();
 
@@ -78,7 +82,7 @@ public class UserProcessing extends ObjectProcessing {
 
                 String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
 
-                Map<String, String> gestor = findActiveSuperior(matricula, empresa);
+                Map<String, String> gestor = findSuperior(matricula, empresa);
 
                 users.add(new UserRecord(
                         contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
@@ -102,27 +106,9 @@ public class UserProcessing extends ObjectProcessing {
         }
     }
 
-    private String fetchContractsPage(String url, int paginaAtual) throws IOException {
-        HttpPost post = new HttpPost(url);
-
-        String body = createUserManagerSearchBody("ConsultarContratosAplicandoAutorizacaoDePerfil",
-                String.format("<v1:PaginaAtual>%d</v1:PaginaAtual>",paginaAtual));
-
-        String xml = connection.headler(body);
-        StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
-        post.setEntity(entity);
-
-        post.setHeader("Content-Type", "text/xml; charset=UTF-8");
-        post.setHeader("Accept", "text/xml");
-        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil");
-
-        return connection.postRequest(post,"Erro ao buscar usuário");
-    }
-
-    private Map<String, String> findActiveSuperior(String matricula, String empresa) {
+    private Map<String, String> findSuperior(String matricula, String empresa) {
 
         Map<String, String> superior = new HashMap<>();
-
         Gestor dadosSuperior = findManager(empresa, matricula);
 
         if (dadosSuperior == null || dadosSuperior.matricula() == null || dadosSuperior.matricula().isBlank()) {
@@ -130,35 +116,15 @@ public class UserProcessing extends ObjectProcessing {
             return null;
         }
 
-        String matriculaSuperior = dadosSuperior.matricula();
-        String situacaoSuperior = dadosSuperior.situacaoDoColaborador();
-        String empresaSuperior = dadosSuperior.empresa();
+        LOG.info(
+                "Superior encontrado. Matrícula {0}, empresa {1}, situação {2} e nome {3}.",
+                dadosSuperior.matricula(),
+                dadosSuperior.empresa(),
+                dadosSuperior.situacaoDoColaborador(),
+                dadosSuperior.nome()
+        );
 
-        LOG.info("Encontrado o superior. Matricula {0} empresa {1} e situação {2}. Validando situação.", matriculaSuperior, empresaSuperior, situacaoSuperior);
-
-        String situacaoTrabalhoNormal = "ATIVIDADE NORMAL";
-
-        while (!dadosSuperior.situacaoDoColaborador().contains(situacaoTrabalhoNormal)) {
-            LOG.info("Superior {0} está com a situação diferente de 'ATIVIDADE NORMAL'. Situação {1}, procurando pelo superior dele.", matriculaSuperior, situacaoSuperior);
-
-            dadosSuperior = findManager(empresaSuperior, matriculaSuperior);
-
-            if (dadosSuperior == null || dadosSuperior.matricula() == null || dadosSuperior.matricula().isBlank()) {
-                LOG.info("Não foi encontrado outro superior.");
-                return null;
-            }
-
-            LOG.info("Superior encontrado: {0}", dadosSuperior);
-
-            matriculaSuperior = dadosSuperior.matricula();
-            situacaoSuperior = dadosSuperior.situacaoDoColaborador();
-        }
-
-        String nomeSuperior = dadosSuperior.nome();
-
-        LOG.info("Superior validado com sucesso. Matricula {0}, empresa {1}, situação {2} e nome {3}.", matriculaSuperior, empresaSuperior, situacaoSuperior, nomeSuperior);
-
-        superior.put(SchemaHandler.NOME_SUPERIOR, nomeSuperior);
+        superior.put(SchemaHandler.NOME_SUPERIOR, dadosSuperior.nome());
 
         return superior;
     }
@@ -167,7 +133,19 @@ public class UserProcessing extends ObjectProcessing {
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         try {
-            String responseXml = executeManagerRequest(url, codigoEmpresa, matricula);
+            String responseXml = executeSoapRequest(url,
+                    Body.createUserManagerSearchBody("ConsultarListaGestoresNivelMaisProximo",
+                            String.format("""
+                                   <v11:Colaborador>
+                                      <v11:Empresa>
+                                        <v11:Codigo>%s</v11:Codigo>
+                                      </v11:Empresa>
+                                      <v11:Matricula>%s</v11:Matricula>
+                                   </v11:Colaborador>
+                                   """,
+                                    codigoEmpresa,
+                                    matricula)),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaGestoresNivelMaisProximo", "Erro ao buscar gestor");
 
             XmlMapper mapper = new XmlMapper();
 
@@ -192,19 +170,8 @@ public class UserProcessing extends ObjectProcessing {
         }
     }
 
-    private String executeManagerRequest(String url, String codigoEmpresa, String matricula) throws IOException {
+    private String executeSoapRequest(String url, String body, String soapAction, String mensagemErro) throws IOException {
         HttpPost post = new HttpPost(url);
-        String body = createUserManagerSearchBody("ConsultarListaGestoresNivelMaisProximo",
-                String.format("""
-                                   <v11:Colaborador>
-                                      <v11:Empresa>
-                                        <v11:Codigo>%s</v11:Codigo>
-                                      </v11:Empresa>
-                                      <v11:Matricula>%s</v11:Matricula>
-                                   </v11:Colaborador>
-                                   """,
-                        codigoEmpresa,
-                        matricula));
         String xml = connection.headler(body);
 
         StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
@@ -212,56 +179,9 @@ public class UserProcessing extends ObjectProcessing {
 
         post.setHeader("Content-Type", "text/xml; charset=UTF-8");
         post.setHeader("Accept", "text/xml");
-        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaGestoresNivelMaisProximo");
+        post.setHeader("SOAPAction", soapAction);
 
-        return connection.postRequest(post,"Erro ao buscar gestor");
-    }
-
-    private String fetchVacationChanges(String url, String codigoEmpresa, String dataFim, String dataInicio) throws IOException {
-        HttpPost post = new HttpPost(url);
-        String body = createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorFerias", codigoEmpresa, dataFim, dataInicio,
-                "<v1:Valor>3</v1:Valor>", "<v1:TipoDeFerias>1064</v1:TipoDeFerias>");
-        String xml = connection.headler(body);
-
-        StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
-        post.setEntity(entity);
-
-        post.setHeader("Content-Type", "text/xml; charset=UTF-8");
-        post.setHeader("Accept", "text/xml");
-        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorFerias");
-
-        return connection.postRequest(post,"Erro ao buscar férias");
-    }
-
-    private String fetchTerminationChanges(String url, String codigoEmpresa, String dataFim, String dataInicio) throws IOException {
-        HttpPost post = new HttpPost(url);
-        String body = createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorRescisao", codigoEmpresa, dataFim, dataInicio,
-                "","");
-        String xml = connection.headler(body);
-
-        StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
-        post.setEntity(entity);
-
-        post.setHeader("Content-Type", "text/xml; charset=UTF-8");
-        post.setHeader("Accept", "text/xml");
-        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorRescisao");
-
-        return connection.postRequest(post,"Erro ao buscar demissão");
-    }
-
-    private String fetchLeaveChanges(String url, String codigoEmpresa, String dataFim, String dataInicio) throws IOException {
-        HttpPost post = new HttpPost(url);
-        String body = createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorAfastamento", codigoEmpresa, dataFim, dataInicio,"","");
-        String xml = connection.headler(body);
-
-        StringEntity entity = new StringEntity(xml, StandardCharsets.UTF_8);
-        post.setEntity(entity);
-
-        post.setHeader("Content-Type", "text/xml; charset=UTF-8");
-        post.setHeader("Accept", "text/xml");
-        post.setHeader("SOAPAction", "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorAfastamento");
-
-        return connection.postRequest(post,"Erro ao buscar afastamento");
+        return connection.postRequest(post, mensagemErro);
     }
 
     public ConnectorObject findByMatricula(String matricula, String dataDemissao) throws IOException {
@@ -279,21 +199,16 @@ public class UserProcessing extends ObjectProcessing {
                     return translate(user, dataDemissao);
                 }
             }
-
             pageNumber++;
-
         } while (pageNumber <= page.totalPages());
-
         return null;
     }
 
     public void sync(SyncResultsHandler syncResultsHandler) throws IOException {
 
-        LOG.info("Inicio do processo de sincronização para demissão:");
+        LOG.info("Inicio do processo de sincronização:");
 
-        String endPointDemitido = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
-
-//        String endPointFerias = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
+        String endPoint = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         Date currentDate = new Date();
 
@@ -319,12 +234,28 @@ public class UserProcessing extends ObjectProcessing {
             LOG.info("Pesquisando demissões da empresa {0}", company);
             LOG.info("Período consultado: {0} até {1}", startDate, endDate);
 
-            String responseXml = fetchTerminationChanges(endPointDemitido, company, endDate, startDate);
+            String responseDemitidoXml = executeSoapRequest(endPoint,
+                    Body.createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorRescisao", company, endDate, startDate,
+                            "",""),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorRescisao",
+                    "Erro ao buscar demissão");
 
-            LOG.info("Resposta SOAP: {0}", responseXml);
+            String responseFeriasXml = executeSoapRequest(endPoint,
+                    Body.createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorFerias", company, endDate, startDate,
+                            "<v1:Valor>3</v1:Valor>", "<v1:TipoDeFerias>1064</v1:TipoDeFerias>"),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorAfastamento",
+                    "Erro ao buscar férias");;
+
+            String responseAfastamentoXml = executeSoapRequest(endPoint,
+                    Body.createModifiedContractsSearchBody ("ConsultarListaDeModificadosPorAfastamento", company, endDate, startDate,
+                            "",""),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorAfastamento",
+                    "Erro ao buscar afastamento");
+
+            LOG.info("Resposta SOAP: {0}", responseDemitidoXml);
 
             XmlMapper mapper = new XmlMapper();
-            JsonNode root = mapper.readTree(responseXml);
+            JsonNode root = mapper.readTree(responseDemitidoXml);
 
             JsonNode contratos = root.path("Body")
                     .path("ConsultarListaDeModificadosPorRescisaoResponse")
@@ -359,17 +290,7 @@ public class UserProcessing extends ObjectProcessing {
                 for (JsonNode operacao : operacoes) {
 
                     String matricula = objetoDemissao.path("IdentificacaoDeContrato").path("Matricula").asString();
-                    String empresa = objetoDemissao.path("IdentificacaoDeContrato").path("Empresa").path("Codigo").asString();
-                    String tipoOperacao = operacao.path("TipoDeOperacao").asString();
                     String dataRescisao = operacao.path("DataDaRescisao").asString();
-
-                    LOG.info(
-                            "Matrícula {0}, Empresa {1}, Tipo {2}, Data {3}",
-                            matricula,
-                            empresa,
-                            tipoOperacao,
-                            dataRescisao
-                    );
 
                     LOG.info("Processando matrícula {0}", matricula);
 
@@ -417,58 +338,6 @@ public class UserProcessing extends ObjectProcessing {
         return builder.build();
     }
 
-    public String createUserManagerSearchBody(String tipo, String filtro){
-        return String.format("""
-                        <soapenv:Body>
-                                <v2:%1$s>
-                                 <v2:filtro>
-                                    %2$s
-                                   <v11:TiposDeSituacoes>
-                                       <arr:int>1</arr:int> <!--1 - Afastamento-->
-                        			   <arr:int>2</arr:int> <!--2 - Atividade Normal-->
-                        			   <arr:int>3</arr:int> <!--3 - Férias-->
-                        			   <arr:int>4</arr:int> <!--4 - Recesso-->
-                        			   <arr:int>5</arr:int> <!--5 - Rescisão-->
-                                    </v11:TiposDeSituacoes>
-                                 </v2:filtro>
-                              </v2:%1$s>
-                           </soapenv:Body>
-                        """,
-                tipo,
-                filtro
-        );
-    }
-
-    public String createModifiedContractsSearchBody(String tipo, String codigoEmpresa,String dataFim, String dataInicio, String operacaoExtra,String complemento) {
-        return String.format("""
-            <soapenv:Body>
-               <v2:%1$s>
-                  <v2:filtro>
-                     <v1:CodigoDaEmpresa>%2$s</v1:CodigoDaEmpresa>
-                     <v1:PeriodoDeBusca>
-                        <v1:DataFim>%3$s</v1:DataFim>
-                        <v1:DataInicio>%4$s</v1:DataInicio>
-                     </v1:PeriodoDeBusca>
-                     <v1:TiposDeOperacoes>
-                        <v1:TipoDeOperacaoDaOcorrencia>
-                           <v1:Valor>1</v1:Valor>
-                           <v1:Valor>2</v1:Valor>
-                           %5$s
-                        </v1:TipoDeOperacaoDaOcorrencia>
-                     </v1:TiposDeOperacoes>
-                     %6$s
-                  </v2:filtro>
-               </v2:%1$s>
-            </soapenv:Body>
-            """,
-                tipo,
-                codigoEmpresa,
-                dataFim,
-                dataInicio,
-                operacaoExtra,
-                complemento
-        );
-    }
 
     public ObjectClassInfoBuilder userSchemaBuilder() {
         ObjectClassInfoBuilder objectClassInfoBuilder = new ObjectClassInfoBuilder();
