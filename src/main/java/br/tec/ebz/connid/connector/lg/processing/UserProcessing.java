@@ -445,9 +445,9 @@ public class UserProcessing extends ObjectHandler {
 
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
-                        Uid.NAME,
+                        Name.NAME,
                         String.class,
-                        USER_MATRICULA,
+                        Name.NAME,
                         AttributeInfo.Flags.REQUIRED
                 )
         );
@@ -455,7 +455,7 @@ public class UserProcessing extends ObjectHandler {
                 buildAttributeInfo(
                         Uid.NAME,
                         String.class,
-                        USER_NOME,
+                        Uid.NAME,
                         AttributeInfo.Flags.REQUIRED
                 )
         );
@@ -463,8 +463,7 @@ public class UserProcessing extends ObjectHandler {
                 buildAttributeInfo(
                         USER_NOME,
                         String.class,
-                        USER_NOME,
-                        AttributeInfo.Flags.REQUIRED
+                        USER_NOME
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
@@ -520,7 +519,7 @@ public class UserProcessing extends ObjectHandler {
                 buildAttributeInfo(
                         USER_DATA_INICIO_FERIAS,
                         Date.class,
-                        USER_DATA_FIM_FERIAS
+                        USER_DATA_INICIO_FERIAS
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
