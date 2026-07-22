@@ -490,56 +490,56 @@ public class UserProcessing extends ObjectHandler {
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         USER_DATA_ADMISSAO,
-                        Date.class,
+                        String.class,
                         USER_DATA_ADMISSAO
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         USER_DATA_DE_NASCIMENTO,
-                        Date.class,
+                        String.class,
                         USER_DATA_DE_NASCIMENTO
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         USER_DATA_DE_RESCISAO,
-                        Date.class,
+                        String.class,
                         USER_DATA_DE_RESCISAO
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         NOME_SUPERIOR,
-                        Date.class,
+                        String.class,
                         NOME_SUPERIOR
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         USER_DATA_INICIO_FERIAS,
-                        Date.class,
+                        String.class,
                         USER_DATA_INICIO_FERIAS
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         USER_DATA_FIM_FERIAS,
-                        Date.class,
+                        String.class,
                         USER_DATA_FIM_FERIAS
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         USER_DATA_INICIO_AFASTAMENTO,
-                        Date.class,
+                        String.class,
                         USER_DATA_INICIO_AFASTAMENTO
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
                         USER_DATA_FIM_AFASTAMENTO,
-                        Date.class,
+                        String.class,
                         USER_DATA_FIM_AFASTAMENTO
                 )
         );
