@@ -3,15 +3,21 @@ package br.tec.ebz.connid.connector.lg;
 import com.evolveum.polygon.common.GuardedStringAccessor;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
+import org.apache.hc.client5.http.ssl.HostnameVerificationPolicy;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.apache.hc.core5.ssl.SSLContexts;
 import org.identityconnectors.common.logging.Log;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.message.BasicHeader;
 import org.identityconnectors.common.security.GuardedString;
 import org.identityconnectors.framework.common.exceptions.ConnectionFailedException;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import tools.jackson.dataformat.xml.XmlMapper;
 
 import java.io.IOException;
@@ -25,11 +31,28 @@ public class LGConnection {
     private LGConfiguration configuration;
     private final CloseableHttpClient httpClient;
 
+    private final XmlMapper mapper;
+
     public LGConnection(LGConfiguration configuration) {
         this.configuration = configuration;
 
+        this.mapper = new XmlMapper();
+        var sslContext = SSLContexts.createSystemDefault();
+
+        var tlsStrategy = new DefaultClientTlsStrategy(
+                sslContext,
+                HostnameVerificationPolicy.CLIENT,
+                NoopHostnameVerifier.INSTANCE
+        );
+
+        var manager = PoolingHttpClientConnectionManagerBuilder.create()
+                .setTlsSocketStrategy(tlsStrategy)
+                .build();
+
         this.httpClient = HttpClients.custom()
-                .setDefaultHeaders(List.of(new BasicHeader("Accept", "application/xml")))
+                .setDefaultHeaders(List.of(
+                        new BasicHeader("Accept", "application/xml")))
+                .setConnectionManager(manager)
                 .build();
 
         status();
@@ -112,8 +135,6 @@ public class LGConnection {
             String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
 
             if (status < 200 || status > 299) {
-
-                XmlMapper mapper = new XmlMapper();
                 JsonNode root = mapper.readTree(responseBody);
                 String mensagem = root.get("Body").get("Fault").get("faultstring").path("").asString();
                 LOG.error("Post FALHOU: status {1}, body: {2}", status, mensagem);
