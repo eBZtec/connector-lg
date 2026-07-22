@@ -17,6 +17,7 @@ import tools.jackson.dataformat.xml.XmlMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -245,7 +246,7 @@ public class UserProcessing extends ObjectHandler {
 
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(currentDate);
-        calendar.add(Calendar.DATE, -29);
+        calendar.add(Calendar.DATE, -1);
         Date lastDate = calendar.getTime();
 
         Calendar startDateCalendar = Calendar.getInstance();
@@ -253,11 +254,11 @@ public class UserProcessing extends ObjectHandler {
         startDateCalendar.add(Calendar.DATE, 1);
         Date currentDatePlus1 = startDateCalendar.getTime();
 
-//        String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
-//        String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
+        String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
+        String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
 
-        String endDate = "2026-01-30";
-        String startDate = "2026-01-01";
+//        String endDate = "2026-01-03"; //descomentar se quiser testar com data que contenha usuários
+//        String startDate = "2026-01-01"; //descomentar se quiser testar com data que contenha usuários
 
         String[] companies = configuration.getEmpresas().split(",");
 
