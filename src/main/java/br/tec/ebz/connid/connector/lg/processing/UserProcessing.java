@@ -257,11 +257,11 @@ public class UserProcessing extends ObjectHandler {
         startDateCalendar.add(Calendar.DATE, 1);
         Date currentDatePlus1 = startDateCalendar.getTime();
 
-        String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
-        String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
+//        String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
+//        String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
 
-//        String endDate = "2026-01-03"; //descomentar se quiser testar com data que contenha usuários
-//        String startDate = "2026-01-01"; //descomentar se quiser testar com data que contenha usuários
+        String endDate = "2026-01-03"; //descomentar se quiser testar com data que contenha usuários
+        String startDate = "2026-01-01"; //descomentar se quiser testar com data que contenha usuários
 
         String[] companies = configuration.getEmpresas().split(",");
 
@@ -428,7 +428,9 @@ public class UserProcessing extends ObjectHandler {
         addAttribute(builder, USER_OU, user.organizacao());
         addAttribute(builder, USER_DATA_ADMISSAO, user.dataAdmissao());
         addAttribute(builder, USER_DATA_DE_NASCIMENTO, user.dataDeNascimento());
-        addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
+        if (user.dataDaRescisao() != null) {
+            addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
+        }
         addAttribute(builder, NOME_SUPERIOR, user.gestorName());
         addAttribute(builder, MATRICULA_SUPERIOR, user.gestorMatricula());
         if (consulta != null) {
