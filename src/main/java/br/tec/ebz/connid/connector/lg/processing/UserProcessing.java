@@ -91,7 +91,8 @@ public class UserProcessing extends ObjectHandler {
                     contrato.path("DataAdmissao").asString(),
                     null,
                     empresa,
-                    gestor != null ? gestor.get(NOME_SUPERIOR) : null
+                    gestor != null ? gestor.get(NOME_SUPERIOR) : null,
+                    gestor != null ? gestor.get(MATRICULA_SUPERIOR) : null
             );
         } catch (Exception e) {
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
@@ -135,7 +136,8 @@ public class UserProcessing extends ObjectHandler {
                         contrato.path("DadosGerais").path("DataAdmissao").asString(),
                         contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
                         empresa,
-                        gestor != null ? gestor.get(NOME_SUPERIOR) : null
+                        gestor != null ? gestor.get(NOME_SUPERIOR) : null,
+                        gestor != null ? gestor.get(MATRICULA_SUPERIOR) : null
                 ));
             }
             return new PageResult(users, totalPages);
@@ -164,6 +166,7 @@ public class UserProcessing extends ObjectHandler {
         );
 
         superior.put(SchemaHandler.NOME_SUPERIOR, dadosSuperior.nome());
+        superior.put(SchemaHandler.MATRICULA_SUPERIOR, dadosSuperior.matricula());
 
         return superior;
     }
@@ -397,7 +400,7 @@ public class UserProcessing extends ObjectHandler {
     }
 
     public static final TipoConsulta FERIAS = new TipoConsulta(
-            "férias",
+            "ferias",
             "ConsultarListaDeModificadosPorFeriasResponse",
             "ConsultarListaDeModificadosPorFeriasResult",
             "ContratoDeTrabalhoModificadoPorFerias",
@@ -418,6 +421,7 @@ public class UserProcessing extends ObjectHandler {
 
         addAttribute(builder, Name.NAME, name);
         addAttribute(builder, Uid.NAME, name);
+        addAttribute(builder, USER_MATRICULA, user.matricula());
         addAttribute(builder, USER_NOME, user.nome());
         addAttribute(builder, USER_CARGO, user.cargo());
         addAttribute(builder, USER_EMPRESA, user.empresa());
@@ -425,9 +429,10 @@ public class UserProcessing extends ObjectHandler {
         addAttribute(builder, USER_DATA_ADMISSAO, user.dataAdmissao());
         addAttribute(builder, USER_DATA_DE_NASCIMENTO, user.dataDeNascimento());
         addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
-        addAttribute(builder, NOME_SUPERIOR, user.gestor());
+        addAttribute(builder, NOME_SUPERIOR, user.gestorName());
+        addAttribute(builder, MATRICULA_SUPERIOR, user.gestorMatricula());
         if (consulta != null) {
-            if ("férias".equals(consulta.tipo())) {
+            if ("ferias".equals(consulta.tipo())) {
                 addAttribute(builder, USER_DATA_INICIO_FERIAS, dataInicio);
                 addAttribute(builder, USER_DATA_FIM_FERIAS, dataFim);
             } else if ("afastamento".equals(consulta.tipo())) {
@@ -457,6 +462,13 @@ public class UserProcessing extends ObjectHandler {
                         String.class,
                         Uid.NAME,
                         AttributeInfo.Flags.REQUIRED
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_MATRICULA,
+                        String.class,
+                        USER_MATRICULA
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
@@ -513,6 +525,13 @@ public class UserProcessing extends ObjectHandler {
                         NOME_SUPERIOR,
                         String.class,
                         NOME_SUPERIOR
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        MATRICULA_SUPERIOR,
+                        String.class,
+                        MATRICULA_SUPERIOR
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
