@@ -4,7 +4,7 @@ public class Body {
 
     public Body() {}
 
-    public static String createUserManagerSearchBody(String tipo, String filtro){
+    public static String createUserSearchBody(String tipo, String filtro){
         return String.format("""
                         <soapenv:Body>
                                 <v2:%1$s>
@@ -46,7 +46,6 @@ public class Body {
                 matricula
         );
     }
-
 
     public static String createModifiedContractsSearchBody(String tipo, String codigoEmpresa,String dataFim, String dataInicio, String operacaoExtra) {
         return String.format("""

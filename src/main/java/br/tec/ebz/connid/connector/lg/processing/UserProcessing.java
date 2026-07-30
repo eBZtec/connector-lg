@@ -1,7 +1,6 @@
 package br.tec.ebz.connid.connector.lg.processing;
 
 import br.tec.ebz.connid.connector.lg.*;
-import br.tec.ebz.connid.connector.lg.model.Gestor;
 import br.tec.ebz.connid.connector.lg.model.PageResult;
 import br.tec.ebz.connid.connector.lg.model.TipoConsulta;
 import br.tec.ebz.connid.connector.lg.model.UserRecord;
@@ -18,8 +17,7 @@ import tools.jackson.dataformat.xml.XmlMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static br.tec.ebz.connid.connector.lg.SchemaHandler.*;
@@ -76,23 +74,18 @@ public class UserProcessing extends ObjectHandler {
                 return null;
             }
 
-            String matricula = contrato.path("Matricula").asString();
-            String empresa = contrato.path("Empresa").path("Codigo").asString();
-
-            Map<String, String> gestor = findSuperior(matricula, empresa);
-
             return new UserRecord(
                     contrato.path("Cargo").path("Descricao").asString(),
                     contrato.path("Empresa").path("Descricao").asString(),
                     contrato.path("UnidadeOrganizacional").path("Descricao").asString(),
-                    matricula,
+                    contrato.path("Matricula").asString(),
                     contrato.path("Pessoa").path("Nome").asString(),
                     contrato.path("Pessoa").path("DataDeNascimento").asString(),
                     contrato.path("DataAdmissao").asString(),
                     null,
-                    empresa,
-                    gestor != null ? gestor.get(NOME_SUPERIOR) : null,
-                    gestor != null ? gestor.get(MATRICULA_SUPERIOR) : null
+                    contrato.path("Empresa").path("Codigo").asString(),
+                    null,
+                    contrato.path("Pessoa").path("Cpf").asString()
             );
         } catch (Exception e) {
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
@@ -105,7 +98,7 @@ public class UserProcessing extends ObjectHandler {
 
         try {
             String responseXml = executeSoapRequest(url,
-                    Body.createUserManagerSearchBody("ConsultarContratosAplicandoAutorizacaoDePerfil",
+                    Body.createUserSearchBody("ConsultarContratosAplicandoAutorizacaoDePerfil",
                             String.format("<v1:PaginaAtual>%d</v1:PaginaAtual>", page)),
                     "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil", "Erro ao buscar usuários");
 
@@ -121,93 +114,23 @@ public class UserProcessing extends ObjectHandler {
             List<UserRecord> users = new ArrayList<>();
 
             for (JsonNode contrato : contratos) {
-                String matricula = contrato.path("DadosGerais").path("Matricula").asString();
-                String empresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
-
-                Map<String, String> gestor = findSuperior(matricula, empresa);
-
                 users.add(new UserRecord(
                         contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
                         contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
                         contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
-                        matricula,
+                        contrato.path("DadosGerais").path("Matricula").asString(),
                         contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
                         contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
                         contrato.path("DadosGerais").path("DataAdmissao").asString(),
                         contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
-                        empresa,
-                        gestor != null ? gestor.get(NOME_SUPERIOR) : null,
-                        gestor != null ? gestor.get(MATRICULA_SUPERIOR) : null
+                        contrato.path("Alocacao").path("Empresa").path("Codigo").asString(),
+                        contrato.path("Alocacao").path("ListaDeGestores").path("IdentificacaoDeGestorV2").path("Matricula").asString(),
+                        contrato.path("Pessoa").path("DadosPessoais").path("CpfCnpj").asString()
                 ));
             }
             return new PageResult(users, totalPages);
         } catch (Exception e) {
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
-            throw new ConnectionFailedException(e.getMessage());
-        }
-    }
-
-    private Map<String, String> findSuperior(String matricula, String empresa) {
-
-        Map<String, String> superior = new HashMap<>();
-        Gestor dadosSuperior = findManager(empresa, matricula);
-
-        if (dadosSuperior == null || dadosSuperior.matricula() == null || dadosSuperior.matricula().isBlank()) {
-            LOG.info("Superior não encontrado.");
-            return null;
-        }
-
-        LOG.info(
-                "Superior encontrado. Matrícula {0}, empresa {1}, situação {2} e nome {3}.",
-                dadosSuperior.matricula(),
-                dadosSuperior.empresa(),
-                dadosSuperior.situacaoDoColaborador(),
-                dadosSuperior.nome()
-        );
-
-        superior.put(SchemaHandler.NOME_SUPERIOR, dadosSuperior.nome());
-        superior.put(SchemaHandler.MATRICULA_SUPERIOR, dadosSuperior.matricula());
-
-        return superior;
-    }
-
-    private Gestor findManager(String codigoEmpresa, String matricula) {
-        String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
-
-        try {
-            String responseXml = executeSoapRequest(url,
-                    Body.createUserManagerSearchBody("ConsultarListaGestoresNivelMaisProximo",
-                            String.format("""
-                                            <v11:Colaborador>
-                                               <v11:Empresa>
-                                                 <v11:Codigo>%s</v11:Codigo>
-                                               </v11:Empresa>
-                                               <v11:Matricula>%s</v11:Matricula>
-                                            </v11:Colaborador>
-                                            """,
-                                    codigoEmpresa,
-                                    matricula)),
-                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaGestoresNivelMaisProximo", "Erro ao buscar gestor");
-
-            XmlMapper mapper = new XmlMapper();
-
-            JsonNode root = mapper.readTree(responseXml);
-
-            JsonNode result = root.path("Body")
-                    .path("ConsultarListaGestoresNivelMaisProximoResponse")
-                    .path("ConsultarListaGestoresNivelMaisProximoResult");
-
-            JsonNode contrato = result.path("Retorno").path("ContratoDeTrabalhoParcial");
-
-            return new Gestor(
-                    contrato.path("Matricula").asString(),
-                    contrato.path("Pessoa").path("Nome").asString(),
-                    contrato.path("SituacaoDoColaborador").path("Descricao").asString(),
-                    contrato.path("Empresa").path("Codigo").asString()
-            );
-
-        } catch (Exception e) {
-            LOG.error("Erro ao processar gestor: {0}", e.getMessage());
             throw new ConnectionFailedException(e.getMessage());
         }
     }
@@ -257,11 +180,11 @@ public class UserProcessing extends ObjectHandler {
         startDateCalendar.add(Calendar.DATE, 1);
         Date currentDatePlus1 = startDateCalendar.getTime();
 
-//        String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
-//        String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
+        String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
+        String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
 
-        String endDate = "2026-01-03"; //descomentar se quiser testar com data que contenha usuários
-        String startDate = "2026-01-01"; //descomentar se quiser testar com data que contenha usuários
+//        String endDate = "2026-01-03"; //descomentar se quiser testar com data que contenha usuários
+//        String startDate = "2026-01-01"; //descomentar se quiser testar com data que contenha usuários
 
         String[] companies = configuration.getEmpresas().split(",");
 
@@ -275,8 +198,6 @@ public class UserProcessing extends ObjectHandler {
                                     <v1:TiposDeOperacoes>
                                        <v1:TipoDeOperacaoDaOcorrencia>
                                           <v1:Valor>1</v1:Valor>
-                                          <v1:Valor>2</v1:Valor>
-                                          <v1:Valor>3</v1:Valor>
                                        </v1:TipoDeOperacaoDaOcorrencia>
                                     </v1:TiposDeOperacoes>
                                     <v1:TipoDeFerias>1064</v1:TipoDeFerias>
@@ -291,6 +212,8 @@ public class UserProcessing extends ObjectHandler {
                                     <v1:TiposDeOperacoes>
                                        <v1:TipoDeOperacaoDaOcorrencia>
                                           <v1:Valor>1</v1:Valor>
+                                       </v1:TipoDeOperacaoDaOcorrencia>
+                                       <v1:TipoDeOperacaoDaOcorrencia>
                                           <v1:Valor>2</v1:Valor>
                                        </v1:TipoDeOperacaoDaOcorrencia>
                                     </v1:TiposDeOperacoes>
@@ -331,8 +254,6 @@ public class UserProcessing extends ObjectHandler {
             contratos = mapper.createArrayNode().add(contratos);
         }
 
-        LocalDate dataFiltro = LocalDate.parse(startDate);
-
         for (JsonNode objeto : contratos) {
 
             JsonNode operacoes = objeto.path("Operacoes")
@@ -343,28 +264,21 @@ public class UserProcessing extends ObjectHandler {
             }
 
             JsonNode periodoSelecionado = null;
-            long menorDiferenca = Long.MAX_VALUE;
+            LocalDateTime dataHoraMaisRecente = null;
 
             for (JsonNode operacao : operacoes) {
 
-                JsonNode periodo = operacao.path("PeriodoDaOcorrencia");
+                String dataHoraStr = operacao.path("DataEHora").asString();
 
-                String inicio = periodo.path("DataInicio").asString();
-
-                if (inicio == null || inicio.isBlank()) {
+                if (dataHoraStr == null || dataHoraStr.isBlank()) {
                     continue;
                 }
 
-                LocalDate dataInicioAfastamento =
-                        LocalDate.parse(inicio.substring(0, 10));
+                LocalDateTime dataHora = LocalDateTime.parse(dataHoraStr);
 
-                long diferenca = Math.abs(
-                        ChronoUnit.DAYS.between(dataFiltro, dataInicioAfastamento)
-                );
-
-                if (diferenca < menorDiferenca) {
-                    menorDiferenca = diferenca;
-                    periodoSelecionado = periodo;
+                if (dataHoraMaisRecente == null || dataHora.isAfter(dataHoraMaisRecente)) {
+                    dataHoraMaisRecente = dataHora;
+                    periodoSelecionado = operacao;
                 }
             }
 
@@ -372,12 +286,14 @@ public class UserProcessing extends ObjectHandler {
                 continue;
             }
 
+            JsonNode periodo = periodoSelecionado.path("PeriodoDaOcorrencia");
+
             String matricula = objeto.path("IdentificacaoDeContrato")
                     .path("Matricula")
                     .asString();
 
-            String inicio = periodoSelecionado.path("DataInicio").asString();
-            String fim = periodoSelecionado.path("DataFim").asString();
+            String inicio = periodo.path("DataInicio").asString();
+            String fim = periodo.path("DataFim").asString();
 
             LOG.info("Processando {0} - Matrícula {1}, início {2}, fim {3}",
                     consulta.tipo(), matricula, inicio, fim);
@@ -428,11 +344,13 @@ public class UserProcessing extends ObjectHandler {
         addAttribute(builder, USER_OU, user.organizacao());
         addAttribute(builder, USER_DATA_ADMISSAO, user.dataAdmissao());
         addAttribute(builder, USER_DATA_DE_NASCIMENTO, user.dataDeNascimento());
+        addAttribute(builder, USER_CPF, user.cpf());
         if (user.dataDaRescisao() != null) {
             addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
         }
-        addAttribute(builder, NOME_SUPERIOR, user.gestorName());
-        addAttribute(builder, MATRICULA_SUPERIOR, user.gestorMatricula());
+        if (user.gestorMatricula() != null) {
+            addAttribute(builder, MATRICULA_SUPERIOR, user.gestorMatricula());
+        }
         if (consulta != null) {
             if ("ferias".equals(consulta.tipo())) {
                 addAttribute(builder, USER_DATA_INICIO_FERIAS, dataInicio);
@@ -524,16 +442,16 @@ public class UserProcessing extends ObjectHandler {
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
-                        NOME_SUPERIOR,
+                        MATRICULA_SUPERIOR,
                         String.class,
-                        NOME_SUPERIOR
+                        MATRICULA_SUPERIOR
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
                 buildAttributeInfo(
-                        MATRICULA_SUPERIOR,
+                        USER_CPF,
                         String.class,
-                        MATRICULA_SUPERIOR
+                        USER_CPF
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
