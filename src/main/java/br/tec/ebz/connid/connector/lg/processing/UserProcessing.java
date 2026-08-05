@@ -229,8 +229,8 @@ public class UserProcessing extends ObjectHandler {
         String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
         String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
 
-//        String endDate = "2026-01-03"; //descomentar se quiser testar com data que contenha usuários
-//        String startDate = "2026-01-01"; //descomentar se quiser testar com data que contenha usuários
+//        String endDate = "2026-01-03"; //TODO descomentar se quiser testar com data que contenha usuários
+//        String startDate = "2026-01-01"; //TODO descomentar se quiser testar com data que contenha usuários
 
         String[] companies = configuration.getEmpresas().split(",");
 
@@ -250,7 +250,6 @@ public class UserProcessing extends ObjectHandler {
                                     """),
                     "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorFerias",
                     "Erro ao buscar férias");
-            ;
 
             String responseAfastamentoXml = executeSoapRequest(endPoint,
                     Body.createModifiedContractsSearchBody("ConsultarListaDeModificadosPorAfastamento", company, endDate, startDate,
@@ -280,8 +279,7 @@ public class UserProcessing extends ObjectHandler {
         }
     }
 
-    public void processarFeriasAfastamentos(String responseXml, String company, TipoConsulta consulta, String startDate, String endDate, XmlMapper mapper, SyncResultsHandler handler) throws IOException {
-
+    public void processarFeriasAfastamentos(String responseXml, String company, TipoConsulta consulta, String startDate, String endDate, XmlMapper mapper, SyncResultsHandler handler) {
         JsonNode root = mapper.readTree(responseXml);
 
         JsonNode contratos = root.path("Body")
