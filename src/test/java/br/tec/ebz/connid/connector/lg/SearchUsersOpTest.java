@@ -25,7 +25,8 @@ public class SearchUsersOpTest extends BaseTestConnection {
         ConnectorFacade facade = setupConnector();
         ListResultHandler handler = new ListResultHandler();
 
-        Attribute attribute = AttributeBuilder.build(Uid.NAME, "62699;6"); // user pag 1
+//        Attribute attribute = AttributeBuilder.build(Uid.NAME, "12214;1"); // demitido
+        Attribute attribute = AttributeBuilder.build(Uid.NAME, "31619;3"); // ativo
         EqualsFilter filter = new EqualsFilter(attribute);
 
         facade.search(ObjectClass.ACCOUNT, filter, handler, null);

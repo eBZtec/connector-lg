@@ -74,19 +74,65 @@ public class UserProcessing extends ObjectHandler {
                 return null;
             }
 
+            String matricula = contrato.path("Matricula").asString();
+            String cpf = contrato.path("Pessoa").path("Cpf").asString();
+            String dataRescisao = fetchUserCpf(matricula, cpf);
+
             return new UserRecord(
                     contrato.path("Cargo").path("Descricao").asString(),
                     contrato.path("Empresa").path("Descricao").asString(),
                     contrato.path("UnidadeOrganizacional").path("Descricao").asString(),
-                    contrato.path("Matricula").asString(),
+                    matricula,
                     contrato.path("Pessoa").path("Nome").asString(),
                     contrato.path("Pessoa").path("DataDeNascimento").asString(),
                     contrato.path("DataAdmissao").asString(),
-                    null,
+                    dataRescisao,
                     contrato.path("Empresa").path("Codigo").asString(),
                     null,
-                    contrato.path("Pessoa").path("Cpf").asString()
+                    cpf
             );
+        } catch (Exception e) {
+            LOG.error("Erro ao processar usuários: {0}", e.getMessage());
+            throw new ConnectionFailedException(e.getMessage());
+        }
+    }
+
+    private String fetchUserCpf(String matricula, String cpf) {
+        String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
+
+        try {
+            String responseXml = executeSoapRequest(
+                    url,
+                    Body.createUserSearchBody(
+                            "ConsultarContratosAplicandoAutorizacaoDePerfil",
+                            String.format("""
+                                    <v1:FiltrosEspecificos>
+                                        <v1:FiltroDeCamposEspecificos>
+                                            <v1:Campo>3</v1:Campo>
+                                            <v1:Operacao>0</v1:Operacao>
+                                            <v1:ValoresParaFiltrar>
+                                                <arr:string>%s</arr:string>
+                                            </v1:ValoresParaFiltrar>
+                                        </v1:FiltroDeCamposEspecificos>
+                                    </v1:FiltrosEspecificos>
+                                    <v1:PaginaAtual>1</v1:PaginaAtual>
+                                    """, cpf)),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil",
+                    "Erro ao buscar usuários");
+
+            XmlMapper mapper = new XmlMapper();
+
+            JsonNode root = mapper.readTree(responseXml);
+
+            JsonNode contratos = root.path("Body").path("ConsultarContratosAplicandoAutorizacaoDePerfilResponse")
+                    .path("ConsultarContratosAplicandoAutorizacaoDePerfilResult").path("Retorno").path("ContratoDeTrabalhoV3");
+
+            for (JsonNode contrato : contratos) {
+                if (matricula.equals(contrato.path("DadosGerais").path("Matricula").asString())) {
+                    return contrato.path("DadosDaRescisao").path("DataDaRescisao").asString();
+                }
+            }
+            return null;
         } catch (Exception e) {
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
             throw new ConnectionFailedException(e.getMessage());
