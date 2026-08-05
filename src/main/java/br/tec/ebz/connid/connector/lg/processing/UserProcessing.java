@@ -10,6 +10,7 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.identityconnectors.common.logging.Log;
 import org.identityconnectors.framework.common.exceptions.ConnectionFailedException;
+import org.identityconnectors.framework.common.exceptions.ConnectorException;
 import org.identityconnectors.framework.common.objects.*;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.dataformat.xml.XmlMapper;
@@ -17,6 +18,7 @@ import tools.jackson.dataformat.xml.XmlMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -76,7 +78,7 @@ public class UserProcessing extends ObjectHandler {
 
             String matricula = contrato.path("Matricula").asString();
             String cpf = contrato.path("Pessoa").path("Cpf").asString();
-            String dataRescisao = fetchUserCpf(matricula, cpf);
+            Boolean isPrimary = defineIfIsPrimary(matricula, cpf);
 
             return new UserRecord(
                     contrato.path("Cargo").path("Descricao").asString(),
@@ -86,10 +88,11 @@ public class UserProcessing extends ObjectHandler {
                     contrato.path("Pessoa").path("Nome").asString(),
                     contrato.path("Pessoa").path("DataDeNascimento").asString(),
                     contrato.path("DataAdmissao").asString(),
-                    dataRescisao,
+                    null,
                     contrato.path("Empresa").path("Codigo").asString(),
                     null,
-                    cpf
+                    cpf,
+                    isPrimary
             );
         } catch (Exception e) {
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
@@ -97,7 +100,7 @@ public class UserProcessing extends ObjectHandler {
         }
     }
 
-    private String fetchUserCpf(String matricula, String cpf) {
+    private Boolean defineIfIsPrimary(String matricula, String cpf) {
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         try {
@@ -118,7 +121,7 @@ public class UserProcessing extends ObjectHandler {
                                     <v1:PaginaAtual>1</v1:PaginaAtual>
                                     """, cpf)),
                     "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarContratosAplicandoAutorizacaoDePerfil",
-                    "Erro ao buscar usuários");
+                    "Erro ao buscar usuários para definir se primária");
 
             XmlMapper mapper = new XmlMapper();
 
@@ -127,15 +130,39 @@ public class UserProcessing extends ObjectHandler {
             JsonNode contratos = root.path("Body").path("ConsultarContratosAplicandoAutorizacaoDePerfilResponse")
                     .path("ConsultarContratosAplicandoAutorizacaoDePerfilResult").path("Retorno").path("ContratoDeTrabalhoV3");
 
+            LocalDate dataMaisRecente = null;
+            String matriculaPrimaria = null;
             for (JsonNode contrato : contratos) {
-                if (matricula.equals(contrato.path("DadosGerais").path("Matricula").asString())) {
-                    return contrato.path("DadosDaRescisao").path("DataDaRescisao").asString();
+                LOG.info("contrato encontrado: {0}", contrato);
+                String matriculaAtual = contrato.path("DadosGerais").path("Matricula").asString();
+
+                if (contrato.has("DadosDaRescisao")){
+                    String dataRescisaoStr = contrato.path("DadosDaRescisao").path("DataDaRescisao").asString();
+
+                    LocalDate dataRescisao = LocalDateTime
+                            .parse(dataRescisaoStr)
+                            .toLocalDate();
+
+                    if (dataMaisRecente == null || dataRescisao.isAfter(dataMaisRecente)) {
+                        dataMaisRecente = dataRescisao;
+                        matriculaPrimaria = matriculaAtual;
+                    }
+
+                }else {
+                    LOG.info("data de rescisão presente? {0}", contrato.has("DadosDaRescisao"));
+                    if (matricula.equals(matriculaAtual)) {
+                        return true;
+                    }else {
+                        LOG.info("conta não é primária");
+                        return false;
+                    }
                 }
             }
-            return null;
+
+            return (matricula.equals(matriculaPrimaria));
+
         } catch (Exception e) {
-            LOG.error("Erro ao processar usuários: {0}", e.getMessage());
-            throw new ConnectionFailedException(e.getMessage());
+            throw new ConnectorException("//defineIfIsPrimary - Erro ao definir se a conta é primária " + e.getMessage());
         }
     }
 
@@ -160,18 +187,21 @@ public class UserProcessing extends ObjectHandler {
             List<UserRecord> users = new ArrayList<>();
 
             for (JsonNode contrato : contratos) {
+                String matricula = contrato.path("DadosGerais").path("Matricula").asString();
+                String cpf = contrato.path("Pessoa").path("DadosPessoais").path("CpfCnpj").asString();
                 users.add(new UserRecord(
                         contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
                         contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
                         contrato.path("Alocacao").path("UnidadeOrganizacional").path("Descricao").asString(),
-                        contrato.path("DadosGerais").path("Matricula").asString(),
+                        matricula,
                         contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
                         contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
                         contrato.path("DadosGerais").path("DataAdmissao").asString(),
                         contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
                         contrato.path("Alocacao").path("Empresa").path("Codigo").asString(),
                         contrato.path("Alocacao").path("ListaDeGestores").path("IdentificacaoDeGestorV2").path("Matricula").asString(),
-                        contrato.path("Pessoa").path("DadosPessoais").path("CpfCnpj").asString()
+                        cpf,
+                        defineIfIsPrimary(matricula, cpf)
                 ));
             }
             return new PageResult(users, totalPages);
@@ -404,6 +434,7 @@ public class UserProcessing extends ObjectHandler {
                 addAttribute(builder, USER_DATA_FIM_AFASTAMENTO, dataFim);
             }
         }
+        addAttribute(builder, USER_IS_PRIMARY, user.isPrimary());
 
         return builder.build();
     }
@@ -524,6 +555,13 @@ public class UserProcessing extends ObjectHandler {
                         USER_DATA_FIM_AFASTAMENTO,
                         String.class,
                         USER_DATA_FIM_AFASTAMENTO
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_IS_PRIMARY,
+                        Boolean.class,
+                        USER_IS_PRIMARY
                 )
         );
         return objectClassInfoBuilder;

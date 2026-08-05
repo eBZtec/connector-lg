@@ -7,11 +7,6 @@
       <option name="url" value="https://nexus.evolveum.com/nexus/content/repositories/snapshots/" />
     </remote-repository>
     <remote-repository>
-      <option name="id" value="archetype" />
-      <option name="name" value="archetype" />
-      <option name="url" value="https://nexus.evolveum.com/nexus/content/repositories/releases" />
-    </remote-repository>
-    <remote-repository>
       <option name="id" value="evolveum-nexus-releases" />
       <option name="name" value="Internal Releases" />
       <option name="url" value="https://nexus.evolveum.com/nexus/content/repositories/releases/" />
@@ -20,6 +15,11 @@
       <option name="id" value="central" />
       <option name="name" value="Central Repository" />
       <option name="url" value="https://repo.maven.apache.org/maven2" />
+    </remote-repository>
+    <remote-repository>
+      <option name="id" value="archetype" />
+      <option name="name" value="archetype" />
+      <option name="url" value="https://nexus.evolveum.com/nexus/content/repositories/releases" />
     </remote-repository>
     <remote-repository>
       <option name="id" value="evolveum" />
