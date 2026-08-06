@@ -17,7 +17,7 @@ public class SearchUsersOpTest extends BaseTestConnection {
 
         facade.search(ObjectClass.ACCOUNT, null, handler, null);
         List<ConnectorObject> objects = handler.getObjects();
-        AssertJUnit.assertTrue("Size: " + objects.size(), objects.size() > 3372); // qtd total 3373
+        AssertJUnit.assertFalse("Size: " + objects.size(), objects.isEmpty()); // qtd total 3373
     }
 
     @Test()

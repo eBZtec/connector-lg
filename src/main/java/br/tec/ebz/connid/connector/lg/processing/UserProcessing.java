@@ -39,13 +39,55 @@ public class UserProcessing extends ObjectHandler {
         if (uid == null) {
             int pageNumber = 1;
             PageResult page;
+            Map<String, List<UserRecord>> allUsersByCPF = new HashMap<>();
             do {
                 page = fetchUserPage(pageNumber);
                 for (UserRecord user : page.users()) {
-                    resultsHandler.handle(translate(user, null, null, null));
+                    allUsersByCPF.computeIfAbsent(user.cpf(), k -> new ArrayList<>())
+                            .add(user);
                 }
+                //if (pageNumber == 5) break;
                 pageNumber++;
             } while (pageNumber <= page.totalPages());
+            //LOG.info("Usuários por CPF: {0}", allUsersByCPF);
+            for (Map.Entry<String, List<UserRecord>> entry : allUsersByCPF.entrySet()) {
+                String cpf = entry.getKey();
+                List<UserRecord> registrosPorMatricula = entry.getValue();
+                LOG.info("======= Inicio Validacao =======");
+                LOG.info("Validando CPF: {0}. Quantidade de contas encontradas: {1}", cpf, registrosPorMatricula.size());
+
+                Optional<UserRecord> ativo = registrosPorMatricula.stream()
+                        .filter(u -> u.dataDaRescisao() == null || u.dataDaRescisao().isBlank())
+                        .findFirst();
+
+                if (ativo.isPresent()) {
+
+                    UserRecord primario = ativo.get();
+
+                    for (int i = 0; i < registrosPorMatricula.size(); i++) {
+                        UserRecord usuario = registrosPorMatricula.get(i);
+                        registrosPorMatricula.set(i, usuario.withPrimary(usuario.equals(primario)));
+                    }
+
+                } else {
+
+                    UserRecord maisRecente = registrosPorMatricula.stream()
+                            .max(Comparator.comparing(u -> LocalDateTime.parse(u.dataDaRescisao())))
+                            .orElse(null);
+
+                    if (maisRecente != null) {
+                        for (int i = 0; i < registrosPorMatricula.size(); i++) {
+                            UserRecord usuario = registrosPorMatricula.get(i);
+                            registrosPorMatricula.set(i, usuario.withPrimary(usuario.equals(maisRecente)));
+                        }
+                    }
+                }
+                LOG.info("registros após validacao: {0}", registrosPorMatricula);
+                for (UserRecord userToMidpoint : registrosPorMatricula){
+                    resultsHandler.handle(translate(userToMidpoint, null, null, null));
+                }
+                LOG.info("======= Fim Validacao =======");
+            }
         } else {
             UserRecord user = fetchUserByUid(uid);
             if (user != null) {
@@ -201,7 +243,7 @@ public class UserProcessing extends ObjectHandler {
                         contrato.path("Alocacao").path("Empresa").path("Codigo").asString(),
                         contrato.path("Alocacao").path("ListaDeGestores").path("IdentificacaoDeGestorV2").path("Matricula").asString(),
                         cpf,
-                        defineIfIsPrimary(matricula, cpf)
+                        null
                 ));
             }
             return new PageResult(users, totalPages);
