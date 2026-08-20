@@ -83,20 +83,20 @@ public class UserProcessing extends ObjectHandler {
                     }
                 }
                 LOG.info("registros após validacao: {0}", registrosPorMatricula);
-                for (UserRecord userToMidpoint : registrosPorMatricula){
+                for (UserRecord userToMidpoint : registrosPorMatricula) {
                     resultsHandler.handle(translate(userToMidpoint, null, null, null));
                 }
                 LOG.info("======= Fim Validacao =======");
             }
         } else {
-            UserRecord user = fetchUserByUid(uid);
+            UserRecord user = fetchUserByUid(uid,null);
             if (user != null) {
                 resultsHandler.handle(translate(user, null, null, null));
             }
         }
     }
 
-    private UserRecord fetchUserByUid(String uid) {
+    private UserRecord fetchUserByUid(String uid, String dataDaRescisao){
         String url = configuration.getUrlEndpoint() + "/v2/servicodecontratodetrabalho";
 
         String[] uidPartes = uid.split(";");
@@ -130,7 +130,7 @@ public class UserProcessing extends ObjectHandler {
                     contrato.path("Pessoa").path("Nome").asString(),
                     contrato.path("Pessoa").path("DataDeNascimento").asString(),
                     contrato.path("DataAdmissao").asString(),
-                    null,
+                    dataDaRescisao,
                     contrato.path("Empresa").path("Codigo").asString(),
                     null,
                     cpf,
@@ -178,7 +178,7 @@ public class UserProcessing extends ObjectHandler {
                 LOG.info("contrato encontrado: {0}", contrato);
                 String matriculaAtual = contrato.path("DadosGerais").path("Matricula").asString();
 
-                if (contrato.has("DadosDaRescisao")){
+                if (contrato.has("DadosDaRescisao")) {
                     String dataRescisaoStr = contrato.path("DadosDaRescisao").path("DataDaRescisao").asString();
 
                     LocalDate dataRescisao = LocalDateTime
@@ -190,11 +190,11 @@ public class UserProcessing extends ObjectHandler {
                         matriculaPrimaria = matriculaAtual;
                     }
 
-                }else {
+                } else {
                     LOG.info("data de rescisão presente? {0}", contrato.has("DadosDaRescisao"));
                     if (matricula.equals(matriculaAtual)) {
                         return true;
-                    }else {
+                    } else {
                         LOG.info("conta não é primária");
                         return false;
                     }
@@ -270,11 +270,24 @@ public class UserProcessing extends ObjectHandler {
     public ConnectorObject findByMatricula(String matricula, TipoConsulta consulta, String dataInicio, String dataFim) {
         LOG.info("Buscando matrícula {0}", matricula);
 
-        UserRecord user = fetchUserByUid(matricula);
+        UserRecord user = fetchUserByUid(matricula, null);
 
         if (user != null) {
             LOG.info("Usuário localizado: {0}", user.matricula());
             return translate(user, consulta, dataInicio, dataFim);
+        }
+
+        return null;
+    }
+
+    public ConnectorObject findByMatriculaRecissao(String matricula, TipoConsulta consulta, String dataRecissao) {
+        LOG.info("Buscando matrícula {0}", matricula);
+
+        UserRecord user = fetchUserByUid(matricula, dataRecissao);
+
+        if (user != null) {
+            LOG.info("Usuário localizado: {0}", user.matricula());
+            return translate(user, consulta, null, null);
         }
 
         return null;
@@ -301,7 +314,7 @@ public class UserProcessing extends ObjectHandler {
         String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
         String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
 
-//        String endDate = "2026-01-03"; //TODO descomentar se quiser testar com data que contenha usuários
+//        String endDate = "2026-01-08"; //TODO descomentar se quiser testar com data que contenha usuários
 //        String startDate = "2026-01-01"; //TODO descomentar se quiser testar com data que contenha usuários
 
         String[] companies = configuration.getEmpresas().split(",");
@@ -338,8 +351,24 @@ public class UserProcessing extends ObjectHandler {
                     "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorAfastamento",
                     "Erro ao buscar afastamento");
 
+            String responseDemissaoXml = executeSoapRequest(endPoint,
+                    Body.createModifiedContractsSearchBody("ConsultarListaDeModificadosPorRescisao", company, endDate, startDate,
+                            """
+                                    <v1:TiposDeOperacoes>
+                                       <v1:TipoDeOperacaoDaOcorrencia>
+                                          <v1:Valor>1</v1:Valor>
+                                       </v1:TipoDeOperacaoDaOcorrencia>
+                                       <v1:TipoDeOperacaoDaOcorrencia>
+                                          <v1:Valor>2</v1:Valor>
+                                       </v1:TipoDeOperacaoDaOcorrencia>
+                                    </v1:TiposDeOperacoes>
+                                    """),
+                    "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorRescisao",
+                    "Erro ao buscar Demitidos");
+
             LOG.info("Resposta SOAP: {0}", responseFeriasXml);
             LOG.info("Resposta SOAP: {0}", responseAfastamentoXml);
+            LOG.info("Resposta SOAP: {0}", responseDemissaoXml);
 
             XmlMapper mapper = new XmlMapper();
 
@@ -347,7 +376,91 @@ public class UserProcessing extends ObjectHandler {
 
             processarFeriasAfastamentos(responseAfastamentoXml, company, AFASTAMENTO, startDate, endDate, mapper, syncResultsHandler);
 
+            processarDemissao(responseDemissaoXml, company, DEMISSAO, startDate, endDate, mapper, syncResultsHandler);
+
             LOG.info("Fim do processo da empresa {0}", company);
+        }
+    }
+
+    public void processarDemissao(String responseXml, String company, TipoConsulta consulta, String startDate, String endDate, XmlMapper mapper, SyncResultsHandler handler) {
+        JsonNode root = mapper.readTree(responseXml);
+
+        JsonNode contratos = root.path("Body")
+                .path(consulta.responseNode())
+                .path(consulta.resultNode())
+                .path("Retorno")
+                .path(consulta.contratoNode());
+
+        if (contratos.isMissingNode() || contratos.isNull()) {
+            LOG.info("Empresa {0} sem usuários de {1} no período {2} até {3}.",
+                    company, consulta.tipo(), startDate, endDate);
+            return;
+        }
+
+        if (!contratos.isArray()) {
+            contratos = mapper.createArrayNode().add(contratos);
+        }
+
+        for (JsonNode objeto : contratos) {
+
+            JsonNode operacoes = objeto.path("Operacoes")
+                    .path(consulta.operacaoNode());
+
+            if (operacoes.isMissingNode() || operacoes.isNull()) {
+                continue;
+            }
+
+            if (!operacoes.isArray()) {
+                operacoes = mapper.createArrayNode().add(operacoes);
+            }
+
+            String matricula = objeto.path("IdentificacaoDeContrato")
+                    .path("Matricula")
+                    .asString();
+
+            for (JsonNode operacao : operacoes) {
+
+                String dataDaRescisao = operacao
+                        .path("DataDaRescisao")
+                        .asString();
+
+                String tipoOperacao = operacao
+                        .path("TipoDeOperacao")
+                        .asString();
+
+                String rescisaoAtiva = operacao
+                        .path("RescisaoAtiva")
+                        .asString();
+
+                LOG.info(
+                        "Processando {0} - Matrícula {1}, TipoOperacao {2}, DataDaRescisao {3}, RescisaoAtiva {4}",
+                        consulta.tipo(),
+                        matricula,
+                        tipoOperacao,
+                        dataDaRescisao,
+                        rescisaoAtiva
+                );
+
+                String uid = matricula + ";" + company;
+
+                ConnectorObject usuario = findByMatriculaRecissao(
+                        uid,
+                        consulta,
+                        dataDaRescisao
+                );
+
+                if (usuario != null) {
+
+                    SyncDeltaBuilder builder = new SyncDeltaBuilder();
+
+                    builder.setObjectClass(ObjectClass.ACCOUNT);
+                    builder.setDeltaType(SyncDeltaType.CREATE_OR_UPDATE);
+                    builder.setObject(usuario);
+                    builder.setToken(new SyncToken(System.currentTimeMillis()));
+
+                    handler.handle(builder.build());
+                }
+            }
         }
     }
 
@@ -444,6 +557,13 @@ public class UserProcessing extends ObjectHandler {
             "ConsultarListaDeModificadosPorAfastamentoResult",
             "ContratoDeTrabalhoModificadoPorAfastamento",
             "OperacaoDeAfastamento");
+
+    public static final TipoConsulta DEMISSAO = new TipoConsulta(
+            "demissao",
+            "ConsultarListaDeModificadosPorRescisaoResponse",
+            "ConsultarListaDeModificadosPorRescisaoResult",
+            "ContratoDeTrabalhoModificadoPorRescisao",
+            "OperacaoDeRescisao");
 
     private ConnectorObject translate(UserRecord user, TipoConsulta consulta, String dataInicio, String dataFim) {
         ConnectorObjectBuilder builder = new ConnectorObjectBuilder();
