@@ -12,7 +12,7 @@
 
     <groupId>br.tec.ebz.connid.connector</groupId>
     <artifactId>connector-lg</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
     <packaging>jar</packaging>
 
     <name>LG</name>

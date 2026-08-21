@@ -84,14 +84,24 @@ public class UserProcessing extends ObjectHandler {
                 }
                 LOG.info("registros após validacao: {0}", registrosPorMatricula);
                 for (UserRecord userToMidpoint : registrosPorMatricula) {
-                    resultsHandler.handle(translate(userToMidpoint, null, null, null));
+                    boolean buildOk = resultsHandler.handle(translate(userToMidpoint, null, null, null));
+                    if(buildOk){
+                        LOG.info("Deu certo");
+                    }else{
+                        LOG.error("não deu certo");
+                    }
                 }
                 LOG.info("======= Fim Validacao =======");
             }
         } else {
             UserRecord user = fetchUserByUid(uid,null);
             if (user != null) {
-                resultsHandler.handle(translate(user, null, null, null));
+                boolean buildOk = resultsHandler.handle(translate(user, null, null, null));
+                if(buildOk){
+                    LOG.info("Deu certo");
+                }else{
+                    LOG.error("não deu certo");
+                }
             }
         }
     }
@@ -458,7 +468,15 @@ public class UserProcessing extends ObjectHandler {
                     builder.setObject(usuario);
                     builder.setToken(new SyncToken(System.currentTimeMillis()));
 
-                    handler.handle(builder.build());
+                    SyncDelta delta = builder.build();
+
+                    boolean buildOk = handler.handle(delta);
+
+                    if(buildOk){
+                        LOG.info("Deu certo");
+                    }else{
+                        LOG.error("não deu certo");
+                    }
                 }
             }
         }
@@ -539,7 +557,15 @@ public class UserProcessing extends ObjectHandler {
                 builder.setObject(usuario);
                 builder.setToken(new SyncToken(System.currentTimeMillis()));
 
-                handler.handle(builder.build());
+                SyncDelta delta = builder.build();
+
+                boolean buildOk = handler.handle(delta);
+
+                if(buildOk){
+                    LOG.info("Deu certo");
+                }else{
+                    LOG.error("não deu certo");
+                }
             }
         }
     }
