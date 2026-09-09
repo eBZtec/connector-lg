@@ -144,6 +144,7 @@ public class UserProcessing extends ObjectHandler {
                     contrato.path("Empresa").path("Codigo").asString(),
                     null,
                     cpf,
+                    null,
                     isPrimary
             );
         } catch (Exception e) {
@@ -253,6 +254,7 @@ public class UserProcessing extends ObjectHandler {
                         contrato.path("Alocacao").path("Empresa").path("Codigo").asString(),
                         contrato.path("Alocacao").path("ListaDeGestores").path("IdentificacaoDeGestorV2").path("Matricula").asString(),
                         cpf,
+                        contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
                         null
                 ));
             }
@@ -613,6 +615,9 @@ public class UserProcessing extends ObjectHandler {
         if (user.gestorMatricula() != null) {
             addAttribute(builder, MATRICULA_SUPERIOR, user.gestorMatricula());
         }
+        if (user.email() != null) {
+            addAttribute(builder, USER_EMAIL, user.email());
+        }
         if (consulta != null) {
             if ("ferias".equals(consulta.tipo())) {
                 addAttribute(builder, USER_DATA_INICIO_FERIAS, dataInicio);
@@ -743,6 +748,13 @@ public class UserProcessing extends ObjectHandler {
                         USER_DATA_FIM_AFASTAMENTO,
                         String.class,
                         USER_DATA_FIM_AFASTAMENTO
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_EMAIL,
+                        String.class,
+                        USER_EMAIL
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(
