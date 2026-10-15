@@ -326,9 +326,6 @@ public class UserProcessing extends ObjectHandler {
         String endDate = new SimpleDateFormat("yyyy-MM-dd").format(currentDatePlus1);
         String startDate = new SimpleDateFormat("yyyy-MM-dd").format(lastDate);
 
-//        String endDate = "2026-01-08"; //TODO descomentar se quiser testar com data que contenha usuários
-//        String startDate = "2026-01-01"; //TODO descomentar se quiser testar com data que contenha usuários
-
         String[] companies = configuration.getEmpresas().split(",");
 
         for (String company : companies) {
