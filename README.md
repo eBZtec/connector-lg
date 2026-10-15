@@ -12,7 +12,6 @@ Uma característica importante deste conector é o suporte a **múltiplas contas
 
 ## Recursos e funcionalidades
 
-```
 | Recurso               | Disponibilidade | Descrição                                                                               |
 | --------------------- | --------------- | --------------------------------------------------------------------------------------- |
 | **Schema**            | SIM             | Apenas usuários (contas).                                                               |
@@ -23,7 +22,6 @@ Uma característica importante deste conector é o suporte a **múltiplas contas
 | **Native Attributes** | SIM             | Usa `Name` e `Uid` com o valor `matricula;codigoEmpresa`.                               |
 | **Provisioning**      | NÃO             | Não cria, não altera e não exclui usuários. Apenas leitura + sincronização.             |
 | **Múltiplas contas**  | SIM             | Permite várias projeções (contas) para o mesmo usuário, diferenciadas pelo `isPrimary`. |
-```
 
 ---
 
@@ -81,7 +79,6 @@ A inclusão de mais atributos está prevista como melhoria futura. Hoje o conect
 
 ## Configuração do Recurso
 
-```
 | Atributo      | Obrigatório | Descrição                                                 |
 | ------------- | ----------- | --------------------------------------------------------- |
 | `urlEndpoint` | SIM         | Endereço base da API. Exemplo: `https://api.lg.com.br`    |
@@ -90,7 +87,6 @@ A inclusão de mais atributos está prevista como melhoria futura. Hoje o conect
 | `guidtenant`  | SIM         | Identificador do tenant (GuidTenant).                     |
 | `ambiente`    | SIM         | Código do ambiente.                                       |
 | `empresas`    | SIM         | Códigos das empresas separados por vírgula (ex: `1,2,5`). |
-```
 
 O campo `empresas` é importante porque o Live Sync consulta as alterações empresa por empresa.
 
