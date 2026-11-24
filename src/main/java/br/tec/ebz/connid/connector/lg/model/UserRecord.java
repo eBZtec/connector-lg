@@ -1,6 +1,6 @@
 package br.tec.ebz.connid.connector.lg.model;
 
-public record UserRecord(String cargo, String empresa, String organizacao, String matricula, String nome, String dataDeNascimento, String dataAdmissao, String dataDaRescisao, String codigoEmpresa, String gestorMatricula, String cpf, String email, Boolean isPrimary) {
+public record UserRecord(String cargo, String empresa, String organizacao, String matricula, String nome, String dataDeNascimento, String dataAdmissao, String dataDaRescisao, String dataDaInicioFerias, String dataFimFerias,String dataInicioAfastamento, String dataFimAfastamento,String codigoEmpresa, String gestorMatricula, String cpf, String email, Boolean isPrimary) {
     public UserRecord withPrimary(boolean primary) {
         return new UserRecord(
                 cargo,
@@ -11,6 +11,10 @@ public record UserRecord(String cargo, String empresa, String organizacao, Strin
                 dataDeNascimento,
                 dataAdmissao,
                 dataDaRescisao,
+                dataDaInicioFerias,
+                dataFimFerias,
+                dataInicioAfastamento,
+                dataFimAfastamento,
                 codigoEmpresa,
                 gestorMatricula,
                 cpf,

@@ -39,23 +39,6 @@ public class SearchUsersOpTest extends BaseTestConnection {
         ConnectorFacade facade = setupConnector();
         ListResultHandler handler = new ListResultHandler();
 
-        /*
-        # usuario com duas contas e uma das duas preenchida com demissao
-        Abdias Atila Paulino Goncalves Pereira
-        18456950700
-        12214 : com DataDaRescisao | demitido
-        31619 : sem DataDaRescisao | ativo
-        */
-//        Attribute attribute = AttributeBuilder.build(Uid.NAME, "12214;1");
-//        Attribute attribute = AttributeBuilder.build(Uid.NAME, "31619;3");
-
-        /*
-        # usuaria com duas contas e as duas preenchidas com demissao
-        Renata Lucia Cavalcanti Cunha
-        02363034732
-        10002 : com DataDaRescisao                  | nao primaria
-        10019: com DataDaRescisao mais recente      | primaria
-        */
 //        Attribute attribute = AttributeBuilder.build(Uid.NAME, "10002;1");
         Attribute attribute = AttributeBuilder.build(Uid.NAME, "10019;1");
         EqualsFilter filter = new EqualsFilter(attribute);

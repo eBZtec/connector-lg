@@ -1,9 +1,7 @@
 package br.tec.ebz.connid.connector.lg.processing;
 
 import br.tec.ebz.connid.connector.lg.*;
-import br.tec.ebz.connid.connector.lg.model.PageResult;
-import br.tec.ebz.connid.connector.lg.model.TipoConsulta;
-import br.tec.ebz.connid.connector.lg.model.UserRecord;
+import br.tec.ebz.connid.connector.lg.model.*;
 import br.tec.ebz.connid.connector.lg.utils.ObjectHandler;
 import br.tec.ebz.connid.connector.lg.utils.Body;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -23,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 import static br.tec.ebz.connid.connector.lg.SchemaHandler.*;
+import static br.tec.ebz.connid.connector.lg.utils.TipoConsulta.*;
 
 public class UserProcessing extends ObjectHandler {
     private static final Log LOG = Log.getLog(UserProcessing.class);
@@ -132,6 +131,10 @@ public class UserProcessing extends ObjectHandler {
             String cpf = contrato.path("Pessoa").path("Cpf").asString();
             Boolean isPrimary = defineIfIsPrimary(matricula, cpf);
 
+            DatasColaborador datas = consultaListas(matricula, codigoEmpresa);
+
+            String rescisao = dataDaRescisao != null && !dataDaRescisao.isBlank() ? dataDaRescisao : datas.dataRescisao();
+
             return new UserRecord(
                     contrato.path("Cargo").path("Descricao").asString(),
                     contrato.path("Empresa").path("Descricao").asString(),
@@ -140,15 +143,22 @@ public class UserProcessing extends ObjectHandler {
                     contrato.path("Pessoa").path("Nome").asString(),
                     contrato.path("Pessoa").path("DataDeNascimento").asString(),
                     contrato.path("DataAdmissao").asString(),
-                    dataDaRescisao,
-                    contrato.path("Empresa").path("Codigo").asString(),
+                    rescisao,
+                    datas.inicioFerias(),
+                    datas.fimFerias(),
+                    datas.inicioAfastamento(),
+                    datas.fimAfastamento(),
+                    codigoEmpresa,
                     null,
                     cpf,
                     null,
                     isPrimary
             );
+
         } catch (Exception e) {
+
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
+
             throw new ConnectionFailedException(e.getMessage());
         }
     }
@@ -240,8 +250,15 @@ public class UserProcessing extends ObjectHandler {
             List<UserRecord> users = new ArrayList<>();
 
             for (JsonNode contrato : contratos) {
+
                 String matricula = contrato.path("DadosGerais").path("Matricula").asString();
+
                 String cpf = contrato.path("Pessoa").path("DadosPessoais").path("CpfCnpj").asString();
+
+                String codigoEmpresa = contrato.path("Alocacao").path("Empresa").path("Codigo").asString();
+
+                DatasColaborador datas = consultaListas(matricula, codigoEmpresa);
+
                 users.add(new UserRecord(
                         contrato.path("Alocacao").path("CargoEFuncaoEfetivo").path("Cargo").path("Descricao").asString(),
                         contrato.path("Alocacao").path("Empresa").path("Descricao").asString(),
@@ -250,19 +267,189 @@ public class UserProcessing extends ObjectHandler {
                         contrato.path("Pessoa").path("DadosPessoais").path("Nome").asString(),
                         contrato.path("Pessoa").path("DadosPessoais").path("DataDeNascimento").asString(),
                         contrato.path("DadosGerais").path("DataAdmissao").asString(),
-                        contrato.path("DadosDaRescisao").path("DataDaRescisao").asString(),
-                        contrato.path("Alocacao").path("Empresa").path("Codigo").asString(),
+                        datas.dataRescisao(),
+                        datas.inicioFerias(),
+                        datas.fimFerias(),
+                        datas.inicioAfastamento(),
+                        datas.fimAfastamento(),
+                        codigoEmpresa,
                         contrato.path("Alocacao").path("ListaDeGestores").path("IdentificacaoDeGestorV2").path("Matricula").asString(),
                         cpf,
                         contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
                         null
                 ));
             }
+
             return new PageResult(users, totalPages);
+
         } catch (Exception e) {
+
             LOG.error("Erro ao processar usuários: {0}", e.getMessage());
+
             throw new ConnectionFailedException(e.getMessage());
         }
+    }
+
+    private DatasColaborador consultaListas(String matricula, String codigoEmpresa) throws IOException {
+
+        LOG.info("Início do processo de consulta: {0};{1}",
+                matricula, codigoEmpresa);
+
+        String baseUrl = configuration.getUrlEndpoint()
+                .replaceAll("/+$", "");
+
+        String endPointRescisao = baseUrl + "/v1/servicoderescisao";
+        String endPointFerias = baseUrl + "/v2/servicodeferias";
+        String endPointAfastamento = baseUrl + "/v2/servicodeafastamento";
+
+        String responseRescisaoXml = executeSoapRequest(
+                endPointRescisao,
+                Body.consultaLista(codigoEmpresa, matricula, "v1"),
+                "lg.com.br/api/v1/ServicoDeRescisao/ConsultarLista",
+                "Erro ao buscar rescisão"
+        );
+
+        String responseFeriasXml = executeSoapRequest(
+                endPointFerias,
+                Body.consultaLista(codigoEmpresa, matricula, "v2"),
+                "lg.com.br/api/v2/ServicoDeFerias/ConsultarLista",
+                "Erro ao buscar férias"
+        );
+
+        String responseAfastamentoXml = executeSoapRequest(
+                endPointAfastamento,
+                Body.consultaLista(codigoEmpresa, matricula, "v2"),
+                "lg.com.br/api/v2/ServicoDeAfastamento/ConsultarLista",
+                "Erro ao buscar afastamento"
+        );
+
+        XmlMapper mapper = new XmlMapper();
+
+        String dataRescisao = consultaRescisao(
+                responseRescisaoXml,
+                RESCISAO_CONSULTA_LISTA,
+                mapper
+        );
+
+        Periodo ferias = consultaFeriasAfastamentos(
+                responseFeriasXml,
+                FERIAS_CONSULTA_LISTA,
+                mapper
+        );
+
+        Periodo afastamento = consultaFeriasAfastamentos(
+                responseAfastamentoXml,
+                AFASTAMENTO_CONSULTA_LISTA,
+                mapper
+        );
+
+        return new DatasColaborador(
+                dataRescisao,
+                ferias.inicio(),
+                ferias.fim(),
+                afastamento.inicio(),
+                afastamento.fim()
+        );
+    }
+
+    private JsonNode normalizarArray(JsonNode node, XmlMapper mapper) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return mapper.createArrayNode();
+        }
+
+        if (node.isArray()) {
+            return node;
+        }
+
+        return mapper.createArrayNode().add(node);
+    }
+
+    private String obterData(JsonNode node, String campo) {
+
+        String valor = node.path(campo).asString(null);
+
+        return valor == null || valor.isBlank()
+                ? null
+                : valor;
+    }
+
+    public String consultaRescisao(String responseXml, TipoConsulta consulta, XmlMapper mapper) {
+
+        JsonNode root = mapper.readTree(responseXml);
+
+        JsonNode consultas = root.path("Body")
+                .path(consulta.responseNode())
+                .path(consulta.resultNode())
+                .path("Retorno");
+
+        consultas = normalizarArray(consultas, mapper);
+
+        for (JsonNode objeto : consultas) {
+
+            JsonNode operacoes = normalizarArray(
+                    objeto.path(consulta.operacaoNode()),
+                    mapper
+            );
+
+            for (JsonNode operacao : operacoes) {
+
+                String dataRescisao = obterData(
+                        operacao,
+                        "DataDaOcorrencia"
+                );
+
+                if (dataRescisao != null) {
+                    return dataRescisao;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public Periodo consultaFeriasAfastamentos(String responseXml, TipoConsulta consulta, XmlMapper mapper) {
+        JsonNode root = mapper.readTree(responseXml);
+
+        JsonNode consultas = root.path("Body")
+                .path(consulta.responseNode())
+                .path(consulta.resultNode())
+                .path("Retorno");
+
+        consultas = normalizarArray(consultas, mapper);
+
+        String ultimoInicio = null;
+        String ultimoFim = null;
+
+        for (JsonNode objeto : consultas) {
+
+            JsonNode operacoes = normalizarArray(
+                    objeto.path(consulta.operacaoNode()),
+                    mapper
+            );
+
+            for (JsonNode operacao : operacoes) {
+
+                String inicio = obterData(
+                        operacao,
+                        "DataDaOcorrencia"
+                );
+
+                String fim = obterData(
+                        operacao,
+                        "DataFim"
+                );
+
+                if (inicio != null &&
+                        (ultimoInicio == null ||
+                                inicio.compareTo(ultimoInicio) > 0)) {
+
+                    ultimoInicio = inicio;
+                    ultimoFim = fim;
+                }
+            }
+        }
+
+        return new Periodo(ultimoInicio, ultimoFim);
     }
 
     private String executeSoapRequest(String url, String body, String soapAction, String mensagemErro) throws IOException {
@@ -360,7 +547,7 @@ public class UserProcessing extends ObjectHandler {
                     "lg.com.br/api/v2/ServicoDeContratoDeTrabalho/ConsultarListaDeModificadosPorAfastamento",
                     "Erro ao buscar afastamento");
 
-            String responseDemissaoXml = executeSoapRequest(endPoint,
+            String responseRescisaoXml = executeSoapRequest(endPoint,
                     Body.createModifiedContractsSearchBody("ConsultarListaDeModificadosPorRescisao", company, endDate, startDate,
                             """
                                     <v1:TiposDeOperacoes>
@@ -377,7 +564,7 @@ public class UserProcessing extends ObjectHandler {
 
             LOG.info("Resposta SOAP: {0}", responseFeriasXml);
             LOG.info("Resposta SOAP: {0}", responseAfastamentoXml);
-            LOG.info("Resposta SOAP: {0}", responseDemissaoXml);
+            LOG.info("Resposta SOAP: {0}", responseRescisaoXml);
 
             XmlMapper mapper = new XmlMapper();
 
@@ -385,13 +572,13 @@ public class UserProcessing extends ObjectHandler {
 
             processarFeriasAfastamentos(responseAfastamentoXml, company, AFASTAMENTO, startDate, endDate, mapper, syncResultsHandler);
 
-            processarDemissao(responseDemissaoXml, company, DEMISSAO, startDate, endDate, mapper, syncResultsHandler);
+            processarRescisao(responseRescisaoXml, company, RESCISAO, startDate, endDate, mapper, syncResultsHandler);
 
             LOG.info("Fim do processo da empresa {0}", company);
         }
     }
 
-    public void processarDemissao(String responseXml, String company, TipoConsulta consulta, String startDate, String endDate, XmlMapper mapper, SyncResultsHandler handler) {
+    public void processarRescisao(String responseXml, String company, TipoConsulta consulta, String startDate, String endDate, XmlMapper mapper, SyncResultsHandler handler) {
         JsonNode root = mapper.readTree(responseXml);
 
         JsonNode contratos = root.path("Body")
@@ -569,27 +756,6 @@ public class UserProcessing extends ObjectHandler {
         }
     }
 
-    public static final TipoConsulta FERIAS = new TipoConsulta(
-            "ferias",
-            "ConsultarListaDeModificadosPorFeriasResponse",
-            "ConsultarListaDeModificadosPorFeriasResult",
-            "ContratoDeTrabalhoModificadoPorFerias",
-            "OperacaoDeFerias");
-
-    public static final TipoConsulta AFASTAMENTO = new TipoConsulta(
-            "afastamento",
-            "ConsultarListaDeModificadosPorAfastamentoResponse",
-            "ConsultarListaDeModificadosPorAfastamentoResult",
-            "ContratoDeTrabalhoModificadoPorAfastamento",
-            "OperacaoDeAfastamento");
-
-    public static final TipoConsulta DEMISSAO = new TipoConsulta(
-            "demissao",
-            "ConsultarListaDeModificadosPorRescisaoResponse",
-            "ConsultarListaDeModificadosPorRescisaoResult",
-            "ContratoDeTrabalhoModificadoPorRescisao",
-            "OperacaoDeRescisao");
-
     private ConnectorObject translate(UserRecord user, TipoConsulta consulta, String dataInicio, String dataFim) {
         ConnectorObjectBuilder builder = new ConnectorObjectBuilder();
         builder.setObjectClass(ObjectClass.ACCOUNT);
@@ -602,28 +768,35 @@ public class UserProcessing extends ObjectHandler {
         addAttribute(builder, USER_NOME, user.nome());
         addAttribute(builder, USER_CARGO, user.cargo());
         addAttribute(builder, USER_EMPRESA, user.empresa());
+        addAttribute(builder, USER_CODIGO_EMPRESA, user.codigoEmpresa());
         addAttribute(builder, USER_OU, user.organizacao());
         addAttribute(builder, USER_DATA_ADMISSAO, user.dataAdmissao());
         addAttribute(builder, USER_DATA_DE_NASCIMENTO, user.dataDeNascimento());
         addAttribute(builder, USER_CPF, user.cpf());
-        if (user.dataDaRescisao() != null) {
-            addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
-        }
+        addAttribute(builder, USER_DATA_DE_RESCISAO, user.dataDaRescisao());
         if (user.gestorMatricula() != null) {
             addAttribute(builder, MATRICULA_SUPERIOR, user.gestorMatricula());
         }
         if (user.email() != null) {
             addAttribute(builder, USER_EMAIL, user.email());
         }
-        if (consulta != null) {
-            if ("ferias".equals(consulta.tipo())) {
-                addAttribute(builder, USER_DATA_INICIO_FERIAS, dataInicio);
-                addAttribute(builder, USER_DATA_FIM_FERIAS, dataFim);
-            } else if ("afastamento".equals(consulta.tipo())) {
-                addAttribute(builder, USER_DATA_INICIO_AFASTAMENTO, dataInicio);
-                addAttribute(builder, USER_DATA_FIM_AFASTAMENTO, dataFim);
-            }
+
+        if (consulta != null && "ferias".equals(consulta.tipo())) {
+            addAttribute(builder, USER_DATA_INICIO_FERIAS, dataInicio);
+            addAttribute(builder, USER_DATA_FIM_FERIAS, dataFim);
+        } else {
+            addAttribute(builder, USER_DATA_INICIO_FERIAS, user.dataDaInicioFerias());
+            addAttribute(builder, USER_DATA_FIM_FERIAS, user.dataFimFerias());
         }
+
+        if (consulta != null && "afastamento".equals(consulta.tipo())) {
+            addAttribute(builder, USER_DATA_INICIO_AFASTAMENTO, dataInicio);
+            addAttribute(builder, USER_DATA_FIM_AFASTAMENTO, dataFim);
+        } else {
+            addAttribute(builder, USER_DATA_INICIO_AFASTAMENTO, user.dataInicioAfastamento());
+            addAttribute(builder, USER_DATA_FIM_AFASTAMENTO, user.dataFimAfastamento());
+        }
+
         addAttribute(builder, USER_IS_PRIMARY, user.isPrimary());
 
         return builder.build();
@@ -675,6 +848,13 @@ public class UserProcessing extends ObjectHandler {
                         USER_EMPRESA,
                         String.class,
                         USER_EMPRESA
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_CODIGO_EMPRESA,
+                        String.class,
+                        USER_CODIGO_EMPRESA
                 )
         );
         objectClassInfoBuilder.addAttributeInfo(

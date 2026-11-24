@@ -69,4 +69,29 @@ public class Body {
                 operacaoExtra
         );
     }
+
+    public static String consultaLista(
+            String codigoEmpresa,
+            String matricula,
+            String versao
+    ) {
+        return String.format("""
+        <soapenv:Body xmlns:api="lg.com.br/api/%3$s">
+            <api:ConsultarLista>
+                <api:filtro>
+                    <v11:Colaborador>
+                        <v11:Empresa>
+                            <v11:Codigo>%1$s</v11:Codigo>
+                        </v11:Empresa>
+                        <v11:Matricula>%2$s</v11:Matricula>
+                    </v11:Colaborador>
+                </api:filtro>
+            </api:ConsultarLista>
+        </soapenv:Body>
+        """,
+                codigoEmpresa,
+                matricula,
+                versao
+        );
+    }
 }

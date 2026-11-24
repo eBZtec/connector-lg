@@ -3,6 +3,7 @@ package br.tec.ebz.connid.connector.lg;
 public interface SchemaHandler {
     String USER_CARGO = "Cargo";
     String USER_EMPRESA = "Empresa";
+    String USER_CODIGO_EMPRESA = "CodigoEmpresa";
     String USER_MATRICULA = "Matricula";
     String USER_OU = "UnidadeOrganizacional";
     String USER_DATA_ADMISSAO = "DataAdmissao";
