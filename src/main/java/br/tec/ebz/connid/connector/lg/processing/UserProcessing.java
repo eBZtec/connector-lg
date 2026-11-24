@@ -11,6 +11,8 @@ import org.identityconnectors.framework.common.exceptions.ConnectionFailedExcept
 import org.identityconnectors.framework.common.exceptions.ConnectorException;
 import org.identityconnectors.framework.common.objects.*;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.dataformat.xml.XmlMapper;
 
 import java.io.IOException;
@@ -152,6 +154,8 @@ public class UserProcessing extends ObjectHandler {
                     null,
                     cpf,
                     null,
+                    datas.historicoFerias(),
+                    datas.historicoAfastamento(),
                     isPrimary
             );
 
@@ -276,6 +280,8 @@ public class UserProcessing extends ObjectHandler {
                         contrato.path("Alocacao").path("ListaDeGestores").path("IdentificacaoDeGestorV2").path("Matricula").asString(),
                         cpf,
                         contrato.path("Pessoa").path("Contato").path("EmailCorporativo").asString(),
+                        datas.historicoFerias(),
+                        datas.historicoAfastamento(),
                         null
                 ));
             }
@@ -325,30 +331,20 @@ public class UserProcessing extends ObjectHandler {
 
         XmlMapper mapper = new XmlMapper();
 
-        String dataRescisao = consultaRescisao(
-                responseRescisaoXml,
-                RESCISAO_CONSULTA_LISTA,
-                mapper
-        );
+        String dataRescisao = consultaRescisao(responseRescisaoXml, RESCISAO_CONSULTA_LISTA, mapper);
 
-        Periodo ferias = consultaFeriasAfastamentos(
-                responseFeriasXml,
-                FERIAS_CONSULTA_LISTA,
-                mapper
-        );
+        ResultadoOcorrencias ferias = consultaFeriasAfastamentos(responseFeriasXml, FERIAS_CONSULTA_LISTA, mapper);
 
-        Periodo afastamento = consultaFeriasAfastamentos(
-                responseAfastamentoXml,
-                AFASTAMENTO_CONSULTA_LISTA,
-                mapper
-        );
+        ResultadoOcorrencias afastamento = consultaFeriasAfastamentos(responseAfastamentoXml, AFASTAMENTO_CONSULTA_LISTA, mapper);
 
         return new DatasColaborador(
                 dataRescisao,
-                ferias.inicio(),
-                ferias.fim(),
-                afastamento.inicio(),
-                afastamento.fim()
+                ferias.ultimoPeriodo().inicio(),
+                ferias.ultimoPeriodo().fim(),
+                afastamento.ultimoPeriodo().inicio(),
+                afastamento.ultimoPeriodo().fim(),
+                ferias.historico(),
+                afastamento.historico()
         );
     }
 
@@ -407,7 +403,7 @@ public class UserProcessing extends ObjectHandler {
         return null;
     }
 
-    public Periodo consultaFeriasAfastamentos(String responseXml, TipoConsulta consulta, XmlMapper mapper) {
+    public ResultadoOcorrencias consultaFeriasAfastamentos(String responseXml, TipoConsulta consulta, XmlMapper mapper) {
         JsonNode root = mapper.readTree(responseXml);
 
         JsonNode consultas = root.path("Body")
@@ -420,6 +416,10 @@ public class UserProcessing extends ObjectHandler {
         String ultimoInicio = null;
         String ultimoFim = null;
 
+        List<String> historico = new ArrayList<>();
+
+        ObjectMapper jsonMapper = new ObjectMapper();
+
         for (JsonNode objeto : consultas) {
 
             JsonNode operacoes = normalizarArray(
@@ -429,15 +429,20 @@ public class UserProcessing extends ObjectHandler {
 
             for (JsonNode operacao : operacoes) {
 
-                String inicio = obterData(
-                        operacao,
-                        "DataDaOcorrencia"
-                );
+                String inicio = obterData(operacao, "DataDaOcorrencia");
 
-                String fim = obterData(
-                        operacao,
-                        "DataFim"
-                );
+                String fim = obterData(operacao, "DataFim");
+
+                String motivo = obterData(operacao, "Motivo");
+
+                ObjectNode ocorrencia = jsonMapper.createObjectNode();
+
+                ocorrencia.put("dataDaOcorrencia", inicio);
+                ocorrencia.put("dataFim", fim);
+
+                if (motivo != null) {ocorrencia.put("motivo", motivo);}
+
+                historico.add(jsonMapper.writeValueAsString(ocorrencia));
 
                 if (inicio != null &&
                         (ultimoInicio == null ||
@@ -449,7 +454,10 @@ public class UserProcessing extends ObjectHandler {
             }
         }
 
-        return new Periodo(ultimoInicio, ultimoFim);
+        return new ResultadoOcorrencias(
+                new Periodo(ultimoInicio, ultimoFim),
+                historico
+        );
     }
 
     private String executeSoapRequest(String url, String body, String soapAction, String mensagemErro) throws IOException {
@@ -797,6 +805,9 @@ public class UserProcessing extends ObjectHandler {
             addAttribute(builder, USER_DATA_FIM_AFASTAMENTO, user.dataFimAfastamento());
         }
 
+        builder.addAttribute(AttributeBuilder.build(USER_HISTORICO_OCORRENCIAS_FERIAS,user.historicoOcorrenciasFerias()));
+        builder.addAttribute(AttributeBuilder.build(USER_HISTORICO_OCORRENCIAS_AFASTAMENTO,user.historicoOcorrenciasAfastamento()));
+
         addAttribute(builder, USER_IS_PRIMARY, user.isPrimary());
 
         return builder.build();
@@ -939,6 +950,22 @@ public class UserProcessing extends ObjectHandler {
                         USER_IS_PRIMARY,
                         Boolean.class,
                         USER_IS_PRIMARY
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_HISTORICO_OCORRENCIAS_FERIAS,
+                        String.class,
+                        USER_HISTORICO_OCORRENCIAS_FERIAS,
+                        AttributeInfo.Flags.MULTIVALUED
+                )
+        );
+        objectClassInfoBuilder.addAttributeInfo(
+                buildAttributeInfo(
+                        USER_HISTORICO_OCORRENCIAS_AFASTAMENTO,
+                        String.class,
+                        USER_HISTORICO_OCORRENCIAS_AFASTAMENTO,
+                        AttributeInfo.Flags.MULTIVALUED
                 )
         );
         return objectClassInfoBuilder;

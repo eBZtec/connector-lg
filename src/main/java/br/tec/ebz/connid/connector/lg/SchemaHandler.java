@@ -18,4 +18,6 @@ public interface SchemaHandler {
     String USER_DATA_FIM_AFASTAMENTO = "DataFimAfastamento";
     String USER_IS_PRIMARY = "isPrimary";
     String USER_EMAIL = "EmailCorporativo";
+    String USER_HISTORICO_OCORRENCIAS_FERIAS = "historicoOcorrenciasFerias";
+    String USER_HISTORICO_OCORRENCIAS_AFASTAMENTO = "historicoOcorrenciasAfastamento";
 }
